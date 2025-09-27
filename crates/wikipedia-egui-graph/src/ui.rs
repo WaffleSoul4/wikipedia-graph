@@ -1,0 +1,248 @@
+use egui::{DragValue, FontId, RichText, Slider, TextEdit, TextFormat, Ui, text::LayoutJob};
+use egui::{Key, Layout, Rect, Spinner, Vec2, Widget};
+use egui_graphs::Metadata;
+use log::{error, info, warn};
+use petgraph::stable_graph::NodeIndex;
+use wikipedia_graph::{WikipediaGraph, WikipediaPage};
+
+use crate::WikipediaGraphApp;
+
+impl WikipediaGraphApp {
+    pub fn keybinds(&mut self, ui: &mut Ui) {
+        self.control_settings.movement.x = match (
+            ui.input(|input| input.key_pressed(Key::A)),
+            ui.input(|input| input.key_pressed(Key::D)),
+        ) {
+            (true, false) => 40.0,
+            (false, true) => -40.0,
+            _ => 0.0,
+        };
+
+        self.control_settings.movement.y = match (
+            ui.input(|input| input.key_pressed(Key::W)),
+            ui.input(|input| input.key_pressed(Key::S)),
+        ) {
+            (true, false) => 40.0,
+            (false, true) => -40.0,
+            _ => 0.0,
+        };
+
+        let mut meta = Metadata::load(ui);
+
+        if ui.input(|input| input.key_pressed(Key::Space)) {
+            let center = meta.screen_to_canvas_pos(ui.min_rect().center());
+
+            if meta.zoom > 1.0 {
+                meta.zoom = 0.1;
+            } else {
+                meta.zoom = 3.0;
+            }
+
+            self.focus_point_from_meta(ui, &mut meta, center.to_vec2());
+        }
+
+        meta.save(ui);
+    }
+
+    pub fn layout_settings(&mut self, ui: &mut Ui) {
+        let layout_settings = &mut self.layout_settings;
+
+        ui.add(Slider::new(&mut layout_settings.c_attract, 0.0..=10.0).text("c_attract"));
+        ui.add(Slider::new(&mut layout_settings.c_repulse, 0.0..=10.0).text("c_repulse"));
+        ui.add(Slider::new(&mut layout_settings.damping, 0.0..=10.0).text("damping"));
+        ui.add(Slider::new(&mut layout_settings.epsilon, 0.0..=10.0).text("epsilon"));
+        ui.add(Slider::new(&mut layout_settings.k_scale, 0.0..=10.0).text("k_scale"));
+        ui.add(Slider::new(&mut layout_settings.dt, 0.0..=10.0).text("dt"));
+        ui.add(Slider::new(&mut layout_settings.max_step, 0.0..=50.0).text("dt"));
+        ui.checkbox(&mut layout_settings.is_running, "is running");
+    }
+
+    pub fn control_settings(&mut self, ui: &mut Ui) {
+        ui.checkbox(
+            &mut self.control_settings.focus_selected,
+            "Focus selected node",
+        );
+
+        let mut meta = Metadata::load(ui);
+
+        ui.horizontal(|ui| {
+            ui.label("Zoom:");
+            ui.add(
+                DragValue::new(&mut meta.zoom)
+                    .speed(0.1)
+                    .range(0.001..=f32::MAX)
+                    .custom_formatter(|zoom, _| format!("{zoom:.2}")),
+            );
+        });
+
+        if self.control_settings.focus_selected {
+            ui.disable();
+        }
+
+        ui.checkbox(&mut self.control_settings.key_input, "Keyboard Input");
+
+        ui.collapsing("Pan", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("x:");
+                ui.add(DragValue::new(&mut meta.pan.x).speed(300))
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("y:");
+                ui.add(DragValue::new(&mut meta.pan.y).speed(300))
+            });
+        });
+
+        meta.save(ui);
+    }
+
+    pub fn style_settings(&mut self, ui: &mut Ui) {
+        let style_settings = &mut self.style_settings;
+
+        ui.checkbox(&mut style_settings.labels, "Show labels");
+    }
+
+    pub fn random_controls(&mut self, ui: &mut Ui) {
+        if ui.button("Select random node").clicked() {
+            self.select_random();
+        }
+
+        if ui.button("Expand random node").clicked() {
+            self.expand_random();
+        }
+    }
+
+    pub fn node_editor(&mut self, ui: &mut Ui) {
+        let node_editor = &mut self.node_editor;
+
+        ui.add(
+            TextEdit::singleline(&mut node_editor.page_title).hint_text("Enter page title here"),
+        );
+
+        if ui.button("Create/Select node").clicked() {
+            let page = WikipediaPage::from_title(&node_editor.page_title);
+            let index = if let Some(index) = <egui_graphs::Graph<WikipediaPage> as WikipediaGraph<
+                NodeIndex,
+            >>::node_exists(&self.graph, &page)
+            {
+                index
+            } else {
+                let index = self.graph.add_node(page);
+
+                let page = self.graph.node_mut(index).unwrap();
+
+                match page.payload_mut().load_page_text(&self.client) {
+                    Ok(_) => {
+                        if let Some(title) = page.payload().try_get_title() {
+                            match title {
+                                Ok(title) => page.set_label(title),
+                                Err(e) => {
+                                    error!(
+                                        "Failed to load '{}': {e}",
+                                        page.payload()
+                                            .url_with_lang(self.language)
+                                            .expect("Failed to make URL with selected language")
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let payload = page.payload().clone();
+                        error!("Request for {} failed: {e}", self.url_of_page(&payload))
+                    }
+                };
+
+                index
+            };
+
+            self.selected_node = Some(index);
+        }
+    }
+
+    pub fn perf(&mut self, ui: &mut Ui) {
+        let frame_counter = &mut self.frame_counter;
+
+        ui.label(format!("Fps: {}", frame_counter.fps));
+    }
+
+    pub fn node_position_ui(&mut self, ui: &mut Ui, index: NodeIndex) {
+        match self.graph.node_mut(index) {
+            Some(node) => {
+                let mut pos = node.location().clone();
+
+                ui.collapsing("Position", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("x:");
+                        ui.add(DragValue::new(&mut pos.x).speed(400))
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("y:");
+                        ui.add(DragValue::new(&mut pos.y).speed(400))
+                    });
+                });
+
+                node.set_location(pos);
+            }
+            None => warn!("Selected node does not exist"),
+        };
+    }
+
+    pub fn node_details_ui(&mut self, ui: &mut Ui, index: NodeIndex) {
+        match self.graph.node_mut(index) {
+            Some(node) => {
+                let page = node.payload_mut();
+
+                let title = match page.try_get_title() {
+                    Some(Ok(title)) => title,
+                    // Don't want to spam the logs, the error should already be there
+                    Some(Err(_)) => "ERROR, check logs".to_string(),
+                    None => {
+                        if let Err(e) = page.load_page_text(&self.client) {
+                            error!("Failed to load selected page text, deselecting node: {e}");
+                            self.selected_node = None;
+                        }
+                        "Loading...".to_string()
+                    }
+                };
+
+                ui.label(RichText::new(title).size(30.0));
+
+                ui.hyperlink_to(
+                    "Wikipedia Page",
+                    self.url_of(index).expect("Selected node doesn't exist"),
+                );
+
+                if ui.button("Expand node").clicked() {
+                    self.expand_node(index);
+                }
+
+                if ui.button("Remove node").clicked() {
+                    self.remove_selected();
+                }
+            }
+            None => warn!("Selected node does not exist"),
+        };
+    }
+
+    pub fn internet_unavailable_ui(&mut self, ui: &mut Ui, remaining_seconds: f32) {
+        let center = ui.max_rect().center();
+
+        let max_rect = Rect::from_center_size(center, Vec2::new(260.0, 75.0));
+
+        ui.put(max_rect, |ui: &mut Ui| {
+            ui.add(Spinner::new().size(50.0));
+            ui.label(format!(
+                "Internet Unavailable, trying again in {:.0} seconds",
+                remaining_seconds
+            ));
+            let button = ui.button("Test Now");
+            if button.clicked() {
+                self.internet_status.test_internet(&self.client);
+            }
+
+            button
+        });
+    }
+}

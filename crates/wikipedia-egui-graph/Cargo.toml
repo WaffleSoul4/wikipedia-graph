@@ -1,0 +1,15 @@
+[package]
+name = "wikipedia-egui-graph"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+eframe = { workspace = true }
+egui = { workspace = true }
+egui_graphs = { workspace = true, features = ["events"] }
+petgraph = { workspace = true }
+log = { workspace = true }
+wikipedia-graph = { path = "../wikipedia-graph", features = ["egui_graphs"]}
+crossbeam = "0.8.4"
+fastrand = "2.3.0"
