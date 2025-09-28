@@ -11,6 +11,6 @@ license = "MIT OR Unlicense"
 thiserror = "2.0.16"
 petgraph = { version = "0.8.2", default-features = false, features = ["std", "stable_graph"]}
 egui_graphs = { version = "0.28.0" }
-eframe = "0.32.1"
-egui = "0.32.1"
+eframe = "0.32.3"
+egui = "0.32.3"
 log = "0.4.28"
