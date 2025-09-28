@@ -40,26 +40,9 @@ impl WikipediaGraphAppBuilder {
 
         let mut graph = Graph::new(graph);
 
-        let mut page = WikipediaPage::from_title("Waffle");
-
         let mut internet_status = InternetStatus::default();
 
-        match page.load_page_text(&client) {
-            Ok(_) => info!("Succesfully loaded first page"),
-            Err(e) => {
-                internet_status.set_unavailable(Duration::from_secs(5), Duration::from_secs(60));
-                error!("Failed to get first page: {e}")
-            }
-        }
-
-        let inintial_node = graph.add_node(page);
-
-        let node = graph
-            .node_mut(inintial_node)
-            .expect("Failed to initialize first node");
-
-        node.set_location(egui::Pos2::ZERO);
-        node.set_label("Waffle".to_string());
+        internet_status.test_internet(&client);
 
         let interaction_settings = SettingsInteraction::new()
             .with_node_clicking_enabled(true)
@@ -80,7 +63,7 @@ impl WikipediaGraphAppBuilder {
             event_reader,
             client,
             frame_counter: FrameCounter::default(),
-            selected_node: Some(inintial_node),
+            selected_node: None,
             control_settings: ControlSettings::default(),
             rng: Rng::new(),
             node_editor: NodeEditor::default(),
