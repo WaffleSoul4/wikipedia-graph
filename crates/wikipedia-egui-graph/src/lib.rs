@@ -13,7 +13,7 @@ use fastrand::Rng;
 use log::{error, info};
 use petgraph::graph::NodeIndex;
 use std::time::{Duration, Instant};
-use wikipedia_graph::{Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
+use wikipedia_graph::{HttpError, Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
 
 use crate::builder::WikipediaGraphAppBuilder;
 
@@ -128,6 +128,15 @@ impl Default for StyleSettings {
 pub struct InternetStatus(InternetStatusInner);
 
 impl InternetStatus {
+    fn get_base(&self, client: &WikipediaClient) -> Result<(), wikipedia_graph::HttpError> {
+        client
+            .get(
+                Url::parse("https://wikipedia.org")
+                    .expect("Failed to parse url 'https://wikipedia.org"),
+            )
+            .map(|_| ())
+    }
+
     fn update(&mut self, client: &WikipediaClient) -> &mut Self {
         match self.0 {
             InternetStatusInner::Available => {}
@@ -135,6 +144,7 @@ impl InternetStatus {
                 wait_time,
                 last_retry,
                 wait_max: _,
+                error: _,
             } => {
                 if Instant::now().duration_since(last_retry) > wait_time {
                     self.test_internet(client);
@@ -145,49 +155,53 @@ impl InternetStatus {
         self
     }
 
-    fn set_unavailable(&mut self, wait_time: Duration, wait_max: Duration) {
+    fn set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
         self.0 = InternetStatusInner::Unavailable {
             wait_time,
             last_retry: Instant::now(),
             wait_max,
+            error: error,
         }
     }
 
     fn test_internet(&mut self, client: &WikipediaClient) {
-        match client.get(
-            Url::parse("https://wikipedia.org")
-                .expect("Failed to parse url 'https://wikipedia.org"),
-        ) {
+        match self.get_base(client) {
             Ok(_) => {
                 info!("Internet available");
                 self.0 = InternetStatusInner::Available
             }
             Err(e) => {
                 error!("Internet test failed: {e}");
-                self.0.reset_unavailable();
+                match self.0 {
+                    InternetStatusInner::Available => self.set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e),
+                    InternetStatusInner::Unavailable { wait_time: _, last_retry: _, wait_max: _, error: _} => self.0.reset_unavailable(e),
+                }
+            
             }
         }
     }
 }
 
-#[derive(PartialEq)]
 enum InternetStatusInner {
     Available,
     Unavailable {
         wait_time: Duration,
         last_retry: Instant,
         wait_max: Duration,
+        error: HttpError,
     },
 }
 
 impl InternetStatusInner {
-    fn reset_unavailable(&mut self) {
+    fn reset_unavailable(&mut self, new_error: HttpError) {
         match self {
             InternetStatusInner::Unavailable {
                 wait_time,
                 last_retry,
                 wait_max,
+                error,
             } => {
+                *error = new_error;
                 *last_retry = Instant::now();
                 if *wait_time < wait_max.div_f32(1.5) {
                     *wait_time = wait_time.mul_f32(1.5)
@@ -349,7 +363,7 @@ impl WikipediaGraphApp {
 
 impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        match self.internet_status.update(&self.client).0 {
+        match &self.internet_status.update(&self.client).0 {
             InternetStatusInner::Available => {
                 self.frame_counter.update_fps();
 
@@ -469,13 +483,22 @@ impl App for WikipediaGraphApp {
                 wait_time: retry_time,
                 last_retry,
                 wait_max: _,
+                error,
             } => {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    self.internet_unavailable_ui(
-                        ui,
-                        (retry_time - Instant::now().duration_since(last_retry)).as_secs_f32(),
-                    )
-                });
+                if egui::CentralPanel::default()
+                    .show(ctx, |ui| {
+                        Self::internet_unavailable_ui(
+                            ui,
+                            (retry_time.clone()
+                                - Instant::now().duration_since(last_retry.clone()))
+                            .as_secs_f32(),
+                            error.to_string(),
+                        )
+                    })
+                    .inner
+                {
+                    self.internet_status.test_internet(&self.client);
+                }
             }
         }
     }

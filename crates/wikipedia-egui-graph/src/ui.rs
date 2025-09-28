@@ -4,9 +4,9 @@ use egui_graphs::Metadata;
 use log::{error, warn};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use wikipedia_graph::{WikipediaGraph, WikipediaPage};
+use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
 
-use crate::WikipediaGraphApp;
+use crate::{InternetStatus, WikipediaGraphApp};
 
 impl WikipediaGraphApp {
     pub fn keybinds(&mut self, ui: &mut Ui) {
@@ -298,23 +298,30 @@ impl WikipediaGraphApp {
             });
     }
 
-    pub fn internet_unavailable_ui(&mut self, ui: &mut Ui, remaining_seconds: f32) {
+    pub fn internet_unavailable_ui(ui: &mut Ui, remaining_seconds: f32, error: String) -> bool {
         let center = ui.max_rect().center();
 
         let max_rect = Rect::from_center_size(center, Vec2::new(260.0, 75.0));
 
+        let mut clicked: bool = false;
+
         ui.put(max_rect, |ui: &mut Ui| {
             ui.add(Spinner::new().size(50.0));
+
             ui.label(format!(
                 "Internet Unavailable, trying again in {:.0} seconds",
                 remaining_seconds
             ));
+
+            ui.label(error);
+
             let button = ui.button("Test Now");
-            if button.clicked() {
-                self.internet_status.test_internet(&self.client);
-            }
+
+            clicked = button.clicked();
 
             button
         });
+
+        clicked
     }
 }
