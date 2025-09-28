@@ -3,7 +3,7 @@ mod common;
 
 #[cfg(feature = "petgraph")]
 mod petgraph {
-    use crate::common::{self, multekrem_page};
+    use crate::common::{self, multekrem_page, NUM_LINKED_MULTEKREM_PAGES};
     use petgraph::prelude::StableDiGraph;
     use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
 
@@ -51,9 +51,14 @@ mod petgraph {
             .expect("If this happens, just use a different crate")
             .expect("Multekrem node does not exist");
 
-        assert_eq!(connected_1, connected_2);
+        assert_eq!(connected_1.len(), NUM_LINKED_MULTEKREM_PAGES);
 
-        assert!(graph_1.edge_weights().eq(graph_2.edge_weights()));
+        // Should always be empty becase it doesn't return nodes that already exist
+        assert!(connected_2.is_empty());
+
+        assert_eq!(graph_1.edge_count(), NUM_LINKED_MULTEKREM_PAGES);
+        assert_eq!(graph_2.edge_count(), NUM_LINKED_MULTEKREM_PAGES);
+
         assert!(
             graph_1
                 .node_weights()

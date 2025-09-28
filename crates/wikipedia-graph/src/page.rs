@@ -237,18 +237,23 @@ impl WikipediaPage {
     }
 
     fn get_title_from_page_text(page_text: &String) -> Result<String, TitleParseError> {
-        let regex = Regex::new(r"([a-zA-Z ]+) - .+").expect("Title regex failed to compile");
+        let regex = Regex::new(
+            r#"<link rel=\"canonical\" href=\"(https:\/\/[a-zA-Z\/\.]{2}\.wikipedia.org\/wiki\/(.*))\">"#,
+        )
+        .expect("Title regex failed to compile");
 
         let title = page_text
             .lines()
-            .filter(|l| l.contains("<title>"))
+            .filter(|l| l.contains("<link rel=\"canonical\""))
             .filter_map(|l| regex.captures(l))
             .next()
             .ok_or(TitleParseError)?
-            .extract::<1>()
-            .1[0]
-            .to_string();
+            .extract::<2>()
+            .1[1]
+            .to_string()
+            .replace("_", " ");
 
+        
         Ok(title)
     }
 

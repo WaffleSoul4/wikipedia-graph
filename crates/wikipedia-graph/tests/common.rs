@@ -5,22 +5,12 @@ use wikipedia_graph::{WikipediaClient, WikipediaPage};
 pub fn multekrem_page() -> WikipediaPage {
     let mut page = WikipediaPage::from_title("Multekrem");
 
-    let mut file = std::fs::File::open("tests/multekrem-page-text")
+    let page_text = std::fs::read_to_string(std::path::Path::new("tests/multekrem-page-text"))
         .expect("Failed to find multekrem page text at tests/multekrem-page-text");
 
-    // Just manually set the page_content to avoid making a request and accessing potentially variable information
+    assert!(!page_text.is_empty(), "Failed to load multekrem page");
 
-    let buffer = &mut [];
-
-    file.read(buffer)
-        .expect("Failed to read from multekrem page at tests/multekrem-page-text");
-
-    let buffer = buffer.to_vec();
-
-    page.set_page_text(
-        String::from_utf8(buffer)
-            .expect("Failed to parse tests/multekrem-page-text as valid utf-8"),
-    );
+    page.set_page_text(page_text);
 
     page
 }
@@ -35,6 +25,8 @@ const LINKED_MULTEKREM_PAGES: [&'static str; 8] = [
     "https://wikipedia.org/wiki/Krumkake",
     "https://wikipedia.org/wiki/List_of_Norwegian_desserts",
 ];
+
+pub const NUM_LINKED_MULTEKREM_PAGES: usize = 8;
 
 pub fn multekrem_pages_iter() -> impl Iterator<Item = WikipediaPage> {
     LINKED_MULTEKREM_PAGES
