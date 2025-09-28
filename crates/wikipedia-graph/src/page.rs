@@ -25,6 +25,21 @@ enum WikipediaPageData {
 #[error("Language has no valid iso 639-1 specification")]
 pub struct LanguageInvalidError;
 
+#[derive(Debug, Error)]
+#[error("Failed to parse title from body")]
+pub struct TitleParseError;
+
+#[derive(Debug, Error)]
+pub enum WikipediaUrlError {
+    #[error("URL host is not the wikipedia domain")]
+    InvalidHost,
+    // For example: https://en.wikipedia.org/wiki/Waffle vs. https://en.wikipedia.org/Waffle (Haven't actually been able to find a page like this yet)
+    #[error("URL path does not lead to a wiki")]
+    InvalidPath,
+    #[error("Invalid URL: '{0}'")]
+    InvalidURL(#[from] url::ParseError),
+}
+
 // Some langs don't have an iso 639-1
 pub fn wikipedia_base_with_language(
     language: isolang::Language,
@@ -43,17 +58,6 @@ pub fn wikipedia_base_with_language(
         )
         .as_str(),
     ))
-}
-
-#[derive(Debug, Error)]
-pub enum WikipediaUrlError {
-    #[error("URL host is not the wikipedia domain")]
-    InvalidHost,
-    // For example: https://en.wikipedia.org/wiki/Waffle vs. https://en.wikipedia.org/Waffle (Haven't actually been able to find a page like this yet)
-    #[error("URL path does not lead to a wiki")]
-    InvalidPath,
-    #[error("Invalid URL: '{0}'")]
-    InvalidURL(#[from] url::ParseError),
 }
 
 fn verify_url(url: &Url) -> Result<(), WikipediaUrlError> {
@@ -142,48 +146,47 @@ impl WikipediaPage {
 
     cfg_if::cfg_if! {
         if #[cfg(feature = "client")] {
-
-    // Does not load the body into memory
-    pub fn get_page_text(&self, client: &WikipediaClient) -> Result<String, HttpError> {
-        match &self.page_data {
-            WikipediaPageData::FullText(t) => Ok(t.clone()),
-            _ => client.get(self.pathinfo.clone()),
-        }
-    }
-
-    // Load the page text from the internet no matter what
-    pub fn force_load_page_text(
-        &mut self,
-        client: &WikipediaClient,
-    ) -> Result<&mut Self, HttpError> {
-        let page_text = client.get(self.pathinfo.clone())?;
-
-        self.page_data = WikipediaPageData::FullText(page_text);
-
-        Ok(self)
-    }
-
-    pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-        self.page_data = WikipediaPageData::FullText(self.get_page_text(client)?);
-
-        Ok(self)
-    }
-
-    pub fn minimize(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-        match &self.page_data {
-            WikipediaPageData::Minimal { title: _ } => {}
-            _ => {
-                let text = self.get_page_text(client)?;
-
-                let title =
-                    WikipediaPage::get_title_from_page_text(&text).expect("Failed to find title");
-
-                self.page_data = WikipediaPageData::Minimal { title };
+            // Does not load the body into memory
+            pub fn get_page_text(&self, client: &WikipediaClient) -> Result<String, HttpError> {
+                match &self.page_data {
+                    WikipediaPageData::FullText(t) => Ok(t.clone()),
+                    _ => client.get(self.pathinfo.clone()),
+                }
             }
-        }
 
-        Ok(self)
-    }
+            // Load the page text from the internet no matter what
+            pub fn force_load_page_text(
+                &mut self,
+                client: &WikipediaClient,
+            ) -> Result<&mut Self, HttpError> {
+                let page_text = client.get(self.pathinfo.clone())?;
+
+                self.page_data = WikipediaPageData::FullText(page_text);
+
+                Ok(self)
+            }
+
+            pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
+                self.page_data = WikipediaPageData::FullText(self.get_page_text(client)?);
+
+                Ok(self)
+            }
+
+            pub fn minimize(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
+                match &self.page_data {
+                    WikipediaPageData::Minimal { title: _ } => {}
+                    _ => {
+                        let text = self.get_page_text(client)?;
+
+                        let title =
+                            WikipediaPage::get_title_from_page_text(&text).expect("Failed to find title");
+
+                        self.page_data = WikipediaPageData::Minimal { title };
+                    }
+                }
+
+                Ok(self)
+            }
         }
     }
 
@@ -209,7 +212,7 @@ impl WikipediaPage {
         let regex = Regex::new(
             "<a href=\"(/wiki/[a-zA-Z_\\(\\)]+)\"(?: class=\"[a-zA-Z-_]\")? title=\"([a-zA-Z ]+)\"",
         )
-        .unwrap(); // The regex is correct trust me
+        .expect("Failed to compile regex to find linked pages");
 
         regex
             .captures_iter(&page_text)
@@ -257,7 +260,3 @@ impl WikipediaPage {
         None
     }
 }
-
-#[derive(Debug, Error)]
-#[error("Failed to parse title from body")]
-pub struct TitleParseError;

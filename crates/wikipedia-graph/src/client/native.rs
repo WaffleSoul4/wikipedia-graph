@@ -1,14 +1,10 @@
 use super::WikipediaClientConfig;
 use isolang::Language;
-use itertools::concat;
 use std::fmt::Display;
 use thiserror::Error;
 use ureq::Agent;
 use url::{ParseError, Url};
 
-const USER_AGENT: &str = "wikipdia-graph/0.1.2";
-
-type InnerConfig = ureq::config::ConfigBuilder<ureq::typestate::AgentScope>;
 type InnerClient = ureq::Agent;
 
 type HttpErrorInner = ureq::Error;
@@ -19,6 +15,12 @@ pub enum HttpError {
     Backend(#[from] HttpErrorInner),
     #[error("Error parsing URL: {0}")]
     UrlParseError(#[from] url::ParseError),
+    #[error("URL was malformed: '{0}'")]
+    BadUri(String),
+    #[error("Page not found at URL")]
+    PageNotFound,
+    #[error("Failed to get page before timout '{0}'")]
+    Timeout(ureq::Timeout),
 }
 
 pub struct WikipediaClient {
@@ -50,9 +52,17 @@ impl WikipediaClient {
             request = request.header(name.expect("All headers must have a name"), value);
         }
 
-        Ok(request
+        let response = request
             .call()
-            .and_then(|body| body.into_body().read_to_string())?)
+            .and_then(|body| body.into_body().read_to_string())
+            .map_err(|err| match err {
+                ureq::Error::StatusCode(404) => HttpError::PageNotFound,
+                ureq::Error::BadUri(uri) => HttpError::BadUri(uri),
+                ureq::Error::Timeout(timeout) => HttpError::Timeout(timeout),
+                _ => HttpError::Backend(err),
+            });
+
+        Ok(response?)
     }
 
     pub fn from_config(config: WikipediaClientConfig) -> Result<Self, HttpError> {
@@ -84,63 +94,5 @@ impl Default for WikipediaClient {
     fn default() -> Self {
         Self::from_config(WikipediaClientConfig::default())
             .expect("Default ureq client is not valid")
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use crate::{WikipediaClient, WikipediaClientConfig};
-
-    #[test]
-    fn default_client_config_is_valid() {
-        let config = WikipediaClientConfig::default();
-
-        WikipediaClient::from_config(config).expect("Default configuration is invalid");
-    }
-
-    mod language {
-        use isolang::Language;
-
-        use crate::client::wikipedia_base_with_language;
-
-        const TEST_LANGUAGES: [(&str, &str); 20] = [
-            ("ar", "Arabic"),
-            ("da", "Danish"),
-            ("de", "German"),
-            ("el", "Greek"),
-            ("en", "English"),
-            ("eo", "Esperanto"),
-            ("es", "Spanish"),
-            ("fr", "French"),
-            ("he", "Hebrew"),
-            ("hi", "Hindi"),
-            ("is", "Icelandic"),
-            ("it", "Italian"),
-            ("ko", "Korean"),
-            ("la", "Latin"),
-            ("nv", "Navajo"),
-            ("pt", "Portuguese"),
-            ("ru", "Russian"),
-            ("sv", "Swedish"),
-            ("to", "Tongan"),
-            ("zh", "Chinese"),
-        ];
-
-        #[test]
-        fn languages_are_valid() {
-            for (iso, name) in TEST_LANGUAGES {
-                let url = wikipedia_base_with_language(
-                    Language::from_639_1(iso)
-                        .expect(format!("Iso code '{iso}' is invalid").as_str()),
-                )
-                .expect(format!("Language '{name}' has no iso 639-1 code").as_str());
-
-                if !url.host_str().map_or(false, |host| {
-                    host.starts_with(iso) && host.ends_with("wikipedia.org")
-                }) {
-                    panic!("Url does not start with the respective iso code")
-                }
-            }
-        }
     }
 }

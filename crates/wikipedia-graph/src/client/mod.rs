@@ -102,3 +102,58 @@ pub fn wikipedia_base_with_language(
         .as_str(),
     ))
 }
+
+#[cfg(test)]
+mod test {
+    use crate::{WikipediaClient, WikipediaClientConfig};
+    #[test]
+    fn default_client_config_is_valid() {
+        let config = WikipediaClientConfig::default();
+
+        WikipediaClient::from_config(config).expect("Default configuration is invalid");
+    }
+    mod language {
+        use isolang::Language;
+
+        use crate::client::wikipedia_base_with_language;
+
+        const TEST_LANGUAGES: [(&str, &str); 20] = [
+            ("ar", "Arabic"),
+            ("da", "Danish"),
+            ("de", "German"),
+            ("el", "Greek"),
+            ("en", "English"),
+            ("eo", "Esperanto"),
+            ("es", "Spanish"),
+            ("fr", "French"),
+            ("he", "Hebrew"),
+            ("hi", "Hindi"),
+            ("is", "Icelandic"),
+            ("it", "Italian"),
+            ("ko", "Korean"),
+            ("la", "Latin"),
+            ("nv", "Navajo"),
+            ("pt", "Portuguese"),
+            ("ru", "Russian"),
+            ("sv", "Swedish"),
+            ("to", "Tongan"),
+            ("zh", "Chinese"),
+        ];
+
+        #[test]
+        fn languages_are_valid() {
+            for (iso, name) in TEST_LANGUAGES {
+                let url = wikipedia_base_with_language(
+                    Language::from_639_1(iso)
+                        .expect(format!("Iso code '{iso}' is invalid").as_str()),
+                )
+                .expect(format!("Language '{name}' has no iso 639-1 code").as_str());
+                if !url.host_str().map_or(false, |host| {
+                    host.starts_with(iso) && host.ends_with("wikipedia.org")
+                }) {
+                    panic!("Url does not start with the respective iso code")
+                }
+            }
+        }
+    }
+}
