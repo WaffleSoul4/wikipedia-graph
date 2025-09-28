@@ -173,11 +173,31 @@ impl InternetStatus {
             Err(e) => {
                 error!("Internet test failed: {e}");
                 match self.0 {
-                    InternetStatusInner::Available => self.set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e),
-                    InternetStatusInner::Unavailable { wait_time: _, last_retry: _, wait_max: _, error: _} => self.0.reset_unavailable(e),
+                    InternetStatusInner::Available => {
+                        self.set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e)
+                    }
+                    InternetStatusInner::Unavailable {
+                        wait_time: _,
+                        last_retry: _,
+                        wait_max: _,
+                        error: _,
+                    } => self.0.reset_unavailable(e),
                 }
-            
             }
+        }
+    }
+
+    fn try_set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
+        match self.0 {
+            InternetStatusInner::Available => {
+                self.0 = InternetStatusInner::Unavailable {
+                    wait_time,
+                    last_retry: Instant::now(),
+                    wait_max,
+                    error,
+                }
+            }
+            _ => {}
         }
     }
 }

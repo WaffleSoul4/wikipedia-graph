@@ -38,11 +38,19 @@ impl WikipediaGraphAppBuilder {
 
         let graph = StableDiGraph::default();
 
-        let mut graph = Graph::new(graph);
-
         let mut internet_status = InternetStatus::default();
 
         internet_status.test_internet(&client);
+
+        let mut graph = Graph::new(graph);
+
+        let mut initial_node = WikipediaPage::random();
+
+        if let Err(e) = initial_node.load_page_text(&client) {
+            internet_status.try_set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e);
+        }
+
+        let random_node_index = graph.add_node(initial_node);
 
         let interaction_settings = SettingsInteraction::new()
             .with_node_clicking_enabled(true)
@@ -63,7 +71,7 @@ impl WikipediaGraphAppBuilder {
             event_reader,
             client,
             frame_counter: FrameCounter::default(),
-            selected_node: None,
+            selected_node: Some(random_node_index),
             control_settings: ControlSettings::default(),
             rng: Rng::new(),
             node_editor: NodeEditor::default(),
