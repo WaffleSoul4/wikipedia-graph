@@ -1,8 +1,9 @@
-use egui::{DragValue, FontId, RichText, Slider, TextEdit, TextFormat, Ui, text::LayoutJob};
-use egui::{Key, Layout, Rect, Spinner, Vec2, Widget};
+use egui::{DragValue, RichText, Slider, TextEdit, Ui};
+use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::Metadata;
-use log::{error, info, warn};
+use log::{error, warn};
 use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::EdgeRef;
 use wikipedia_graph::{WikipediaGraph, WikipediaPage};
 
 use crate::WikipediaGraphApp;
@@ -207,23 +208,94 @@ impl WikipediaGraphApp {
                     }
                 };
 
-                ui.label(RichText::new(title).size(30.0));
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.label(RichText::new(title).size(30.0));
 
-                ui.hyperlink_to(
-                    "Wikipedia Page",
-                    self.url_of(index).expect("Selected node doesn't exist"),
-                );
+                    ui.hyperlink_to(
+                        "Wikipedia Page",
+                        self.url_of(index).expect("Selected node doesn't exist"),
+                    );
 
-                if ui.button("Expand node").clicked() {
-                    self.expand_node(index);
-                }
+                    if ui.button("Expand node").clicked() {
+                        self.expand_node(index);
+                    }
 
-                if ui.button("Remove node").clicked() {
-                    self.remove_selected();
-                }
+                    if ui.button("Remove node").clicked() {
+                        self.remove_selected();
+                    }
+
+                    self.node_position_ui(ui, index);
+
+                    ui.separator();
+
+                    ui.collapsing("Outgoing Nodes", |ui| {
+                        self.connected_nodes_ui(ui, index, petgraph::Direction::Outgoing);
+                    });
+
+                    ui.collapsing("Incoming Nodes", |ui| {
+                        self.connected_nodes_ui(ui, index, petgraph::Direction::Incoming);
+                    });
+
+                    let button = ui
+                        .button("Expand all connected")
+                        .on_hover_text("You must sacrifice a single cpu core to click this button");
+
+                    if button.clicked() {
+                        self.expand_connected_nodes(index);
+                    };
+                });
             }
             None => warn!("Selected node does not exist"),
         };
+    }
+
+    pub fn connected_nodes<'a>(
+        graph: &'a egui_graphs::Graph<WikipediaPage>,
+        index: NodeIndex,
+        direction: petgraph::EdgeDirection,
+    ) -> impl Iterator<Item = NodeIndex> + 'a {
+        graph
+            .edges_directed(index, direction)
+            .map(|edge_reference| edge_reference.id())
+            .flat_map(|edge_index| {
+                let connected_node = graph
+                    .edge_endpoints(edge_index)
+                    .map(|(_source, target)| target);
+
+                if connected_node.is_none() {
+                    error!("Failed to locate a connected edge of the selected node");
+                }
+
+                connected_node
+            })
+    }
+
+    pub fn connected_nodes_ui(
+        &mut self,
+        ui: &mut Ui,
+        index: NodeIndex,
+        direction: petgraph::EdgeDirection,
+    ) {
+        let _ = Self::connected_nodes(&self.graph, index, direction)
+            .flat_map(|connected_index| {
+                let node_data = self
+                    .graph
+                    .node(connected_index)
+                    .map(|node| (node.label(), connected_index));
+
+                if node_data.is_none() {
+                    error!("Failed to locate a connected node of the selected node");
+                }
+
+                node_data
+            })
+            .for_each(|(label, connected_index)| {
+                ui.collapsing(label, |ui| {
+                    if ui.button("Select node").clicked() {
+                        self.selected_node = Some(connected_index)
+                    }
+                });
+            });
     }
 
     pub fn internet_unavailable_ui(&mut self, ui: &mut Ui, remaining_seconds: f32) {

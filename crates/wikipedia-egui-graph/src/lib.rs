@@ -1,7 +1,7 @@
 pub mod builder;
 mod ui;
 
-use crossbeam::channel::{Receiver, Sender, unbounded};
+use crossbeam::channel::{Receiver, Sender};
 use eframe::{App, CreationContext};
 use egui::{Context, Pos2, Ui, Vec2};
 use egui_graphs::{
@@ -11,11 +11,9 @@ use egui_graphs::{
 };
 use fastrand::Rng;
 use log::{error, info};
-use petgraph::{graph::NodeIndex, prelude::StableDiGraph};
+use petgraph::graph::NodeIndex;
 use std::time::{Duration, Instant};
-use wikipedia_graph::{
-    Language, Url, WikipediaClient, WikipediaClientConfig, WikipediaGraph, WikipediaPage,
-};
+use wikipedia_graph::{Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
 
 use crate::builder::WikipediaGraphAppBuilder;
 
@@ -127,7 +125,7 @@ impl Default for StyleSettings {
     }
 }
 
-struct InternetStatus(InternetStatusInner);
+pub struct InternetStatus(InternetStatusInner);
 
 impl InternetStatus {
     fn update(&mut self, client: &WikipediaClient) -> &mut Self {
@@ -222,25 +220,27 @@ impl WikipediaGraphApp {
 
 impl WikipediaGraphApp {
     fn expand_node(&mut self, index: NodeIndex) {
-        match self.graph.try_expand_node(index, &self.client) {
+        Self::expand_node_with_graph(&mut self.graph, &self.client, &mut self.rng, index)
+    }
+
+    pub fn expand_node_with_graph(
+        graph: &mut Graph<WikipediaPage>,
+        client: &WikipediaClient,
+        rng: &mut Rng,
+        index: NodeIndex,
+    ) {
+        match graph.try_expand_node(index, client) {
             Err(e) => error!("Request failed: {e}"),
             Ok(Some(indicies)) => {
-                let parent_pos = self
-                    .graph
+                let parent_pos = graph
                     .node(index)
                     .map(|node| node.location())
                     .unwrap_or(Pos2::ZERO);
 
                 for index in indicies {
-                    let node = self
-                        .graph
-                        .node_mut(index)
-                        .expect("Failed to find added nodes");
+                    let node = graph.node_mut(index).expect("Failed to find added nodes");
 
-                    let pos = Pos2::new(
-                        self.rng.f32().clamp(-1.0, 1.0),
-                        self.rng.f32().clamp(-1.0, 1.0),
-                    );
+                    let pos = Pos2::new(rng.f32().clamp(-1.0, 1.0), rng.f32().clamp(-1.0, 1.0));
 
                     node.set_location(pos + parent_pos.to_vec2());
 
@@ -307,12 +307,14 @@ impl WikipediaGraphApp {
 
     fn remove_selected(&mut self) {
         if let Some(selected) = self.selected_node {
-            let index = selected.clone();
-
-            self.selected_node = None;
-
-            self.graph.remove_node(index);
+            self.remove_node(selected);
         }
+    }
+
+    fn remove_node(&mut self, index: NodeIndex) {
+        self.selected_node = None;
+
+        self.graph.remove_node(index);
     }
 
     fn update_position_from_meta(&mut self, meta: &mut Metadata) {
@@ -334,6 +336,14 @@ impl WikipediaGraphApp {
     fn url_of_page(&self, page: &WikipediaPage) -> Url {
         page.url_with_lang(self.language)
             .expect("Selected language has no iso 639-1 encoding")
+    }
+
+    pub fn expand_connected_nodes(&mut self, index: NodeIndex) {
+        for index in Self::connected_nodes(&self.graph, index, petgraph::Direction::Outgoing)
+            .collect::<Vec<_>>()
+        {
+            self.expand_node(index);
+        }
     }
 }
 
@@ -452,7 +462,6 @@ impl App for WikipediaGraphApp {
                         .min_width(200.0)
                         .show(ctx, |ui| {
                             self.node_details_ui(ui, node_index);
-                            self.node_position_ui(ui, node_index);
                         });
                 }
             }

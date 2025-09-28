@@ -1,13 +1,13 @@
 #![cfg(target_arch = "wasm32")]
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures as _; // ensure the crate is linked for wasm_bindgen async
+use wasm_bindgen_futures as _;
 use web_sys::HtmlCanvasElement;
 
 #[wasm_bindgen(start)]
 pub fn start() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
-    // Fire and forget: kick off the async runner
+
     wasm_bindgen_futures::spawn_local(async {
         let _ = run().await;
     });

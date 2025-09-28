@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, StyleSettings,
     USER_AGENT, WikipediaGraphApp,
@@ -8,6 +6,7 @@ use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::prelude::StableDiGraph;
+use std::time::Duration;
 use wikipedia_graph::{Language, WikipediaClient, WikipediaClientConfig, WikipediaPage};
 
 // Don't worry, I might add more

@@ -25,7 +25,7 @@ enum WikipediaPageData {
 #[error("Language has no valid iso 639-1 specification")]
 pub struct LanguageInvalidError;
 
-    // Some langs don't have an iso 639-1
+// Some langs don't have an iso 639-1
 pub fn wikipedia_base_with_language(
     language: isolang::Language,
 ) -> Result<Url, LanguageInvalidError> {
@@ -87,10 +87,7 @@ impl WikipediaPage {
         &self.pathinfo
     }
 
-    pub fn url_with_lang(
-        &self,
-        language: Language,
-    ) -> Result<Url, LanguageInvalidError> {
+    pub fn url_with_lang(&self, language: Language) -> Result<Url, LanguageInvalidError> {
         let base = crate::page::wikipedia_base_with_language(language)?;
         match base.join(&self.pathinfo) {
             Ok(t) => Ok(t),
@@ -207,7 +204,6 @@ impl WikipediaPage {
             WikipediaPageData::None => None,
         }
     }
-
 
     fn get_linked_pages_from_page_text(page_text: &String) -> Vec<WikipediaPage> {
         let regex = Regex::new(
