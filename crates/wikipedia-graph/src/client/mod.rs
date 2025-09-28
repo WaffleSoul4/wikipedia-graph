@@ -13,8 +13,6 @@ pub mod wasm;
 #[cfg(target_arch = "wasm32")]
 pub use wasm::*;
 
-use crate::page::LanguageInvalidError;
-
 const CLIENT_REDIRECTS: u32 = 2;
 
 pub struct WikipediaClientConfig {
@@ -83,24 +81,29 @@ impl Default for WikipediaClientConfig {
     }
 }
 
-// Some langs don't have an iso 639-1
-pub fn wikipedia_base_with_language(
-    language: isolang::Language,
-) -> Result<Url, LanguageInvalidError> {
-    Ok(Url::parse(
-        format!(
-            "https://{}.wikipedia.org/wiki/",
-            language.to_639_1().ok_or(LanguageInvalidError)?
-        )
-        .as_str(),
-    )
-    .expect(
-        format!(
-            "Wikipedia URL with language '{:?}' parsing failed",
-            language
-        )
-        .as_str(),
-    ))
+pub trait WikipediaClientCommon {
+    fn language(&self) -> isolang::Language;
+
+    fn base_url(&self) -> Result<Url, crate::page::LanguageInvalidError> {
+        crate::page::wikipedia_base_with_language(self.language())
+    }
+
+    fn url_from_pathinfo<T: std::fmt::Display>(&self, pathinfo: T) -> Result<Url, url::ParseError> {
+        let pathinfo = pathinfo.to_string();
+
+        let base_url = self.base_url().expect("Selected language is invalid");
+
+        if pathinfo.eq("Special:Random") {
+            return Ok(
+                Url::parse(format!("{}Special:Random", base_url.to_string()).as_str())
+                    .expect("Random URL is not valid"),
+            );
+        }
+
+        self.base_url()
+            .expect("Selected language is invalid")
+            .join(pathinfo.as_str())
+    }
 }
 
 #[cfg(test)]
@@ -115,7 +118,7 @@ mod test {
     mod language {
         use isolang::Language;
 
-        use crate::client::wikipedia_base_with_language;
+        use crate::page::wikipedia_base_with_language;
 
         const TEST_LANGUAGES: [(&str, &str); 20] = [
             ("ar", "Arabic"),

@@ -7,6 +7,8 @@ cfg_if::cfg_if! {
         pub use client::WikipediaClient;
 
         pub use client::WikipediaClientConfig;
+
+        pub use client::HttpError;
     }
 }
 

@@ -3,7 +3,7 @@ mod common;
 
 #[cfg(feature = "petgraph")]
 mod petgraph {
-    use crate::common::{self, multekrem_page, NUM_LINKED_MULTEKREM_PAGES};
+    use crate::common::{self, NUM_LINKED_MULTEKREM_PAGES, multekrem_page};
     use petgraph::prelude::StableDiGraph;
     use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
 

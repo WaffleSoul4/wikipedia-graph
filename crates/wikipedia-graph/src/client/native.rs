@@ -1,9 +1,11 @@
+use crate::client::WikipediaClientCommon;
+
 use super::WikipediaClientConfig;
 use isolang::Language;
 use std::fmt::Display;
 use thiserror::Error;
 use ureq::Agent;
-use url::{ParseError, Url};
+use url::Url;
 
 type InnerClient = ureq::Agent;
 
@@ -28,17 +30,6 @@ pub struct WikipediaClient {
     language: Language,
     headers: http::HeaderMap,
 }
-
-// async fn fetch(client: &BaseClient, url: Url) -> Result<String, HttpError> {
-//     println!("Hello from runtime");
-
-//     Ok(client
-//             .get(url)
-//             .send()
-//             .await?
-//             .text()
-//             .await?)
-// }
 
 impl WikipediaClient {
     pub fn get<T: Display>(&self, pathinfo: T) -> Result<String, HttpError> {
@@ -78,15 +69,11 @@ impl WikipediaClient {
             headers: config.headers,
         })
     }
+}
 
-    pub fn base_url(&self) -> Result<Url, super::LanguageInvalidError> {
-        super::wikipedia_base_with_language(self.language)
-    }
-
-    pub fn url_from_pathinfo<T: Display>(&self, pathinfo: T) -> Result<Url, ParseError> {
-        self.base_url()
-            .expect("Selected language is invalid")
-            .join(pathinfo.to_string().as_str())
+impl WikipediaClientCommon for WikipediaClient {
+    fn language(&self) -> isolang::Language {
+        self.language
     }
 }
 

@@ -91,6 +91,13 @@ impl WikipediaPage {
         &self.pathinfo
     }
 
+    pub fn random() -> Self {
+        WikipediaPage {
+            pathinfo: "Special:Random".to_string(),
+            page_data: WikipediaPageData::None,
+        }
+    }
+
     pub fn url_with_lang(&self, language: Language) -> Result<Url, LanguageInvalidError> {
         let base = crate::page::wikipedia_base_with_language(language)?;
         match base.join(&self.pathinfo) {
@@ -253,7 +260,6 @@ impl WikipediaPage {
             .to_string()
             .replace("_", " ");
 
-        
         Ok(title)
     }
 
