@@ -189,12 +189,6 @@ impl WikipediaGraphApp {
 
                 let page_text_loaded = page.is_page_text_loaded();
 
-                let page_text = if page_text_loaded {
-                    page.try_get_page_text()
-                } else {
-                    None
-                };
-
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(RichText::new(title).size(30.0));
 
@@ -216,11 +210,6 @@ impl WikipediaGraphApp {
                     ui.collapsing("Struct data", |ui| {
                         ui.label(format!("pathinfo: {}", pathinfo));
                         ui.label(format!("page text loaded: {}", page_text_loaded));
-                        if page_text_loaded {
-                            if let Some(page_text) = page_text {
-                                egui::ScrollArea::both().show(ui, |ui| ui.label(page_text));
-                            }
-                        }
                     });
 
                     ui.separator();

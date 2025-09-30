@@ -96,9 +96,11 @@ impl WikipediaPage {
 
         page.load_page_text(client)?;
 
-        if let Err(e) = page.try_update_pathinfo() {
-            log::error!("{e}")
-        }
+        if let Err(e) = page.update_pathinfo_with_page_text(
+            &page.try_get_page_text().expect("Failed to get page text"),
+        ) {
+            log::error!("{e}");
+        };
 
         Ok(page)
     }
@@ -160,10 +162,11 @@ impl WikipediaPage {
             })
     }
 
-    pub fn try_update_pathinfo(&mut self) -> Result<&mut Self, PathinfoParseError> {
-        if let Some(page_text) = self.page_text.take() {
-            self.pathinfo = Self::get_pathinfo_from_page_text(&page_text)?
-        }
+    pub fn update_pathinfo_with_page_text(
+        &mut self,
+        page_text: &String,
+    ) -> Result<&mut Self, PathinfoParseError> {
+        self.pathinfo = Self::get_pathinfo_from_page_text(&page_text)?;
 
         Ok(self)
     }
@@ -241,7 +244,7 @@ impl WikipediaPage {
                 WikipediaPage::try_from_path(capture_data.1[0])
                     .ok()
                     .map(|mut page| {
-                        page.page_text = Some(capture_data.1[1].to_string());
+                        page.pathinfo = capture_data.1[1].to_string().replace(" ", "_");
 
                         page
                     })
