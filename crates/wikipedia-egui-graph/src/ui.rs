@@ -1,4 +1,4 @@
-use egui::{DragValue, RichText, Slider, TextEdit, Ui};
+use egui::{DragValue, RichText, ScrollArea, Slider, TextEdit, Ui};
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::Metadata;
 use log::{error, warn};
@@ -185,6 +185,16 @@ impl WikipediaGraphApp {
 
                 let title = page.title();
 
+                let pathinfo = page.pathinfo().clone();
+
+                let page_text_loaded = page.is_page_text_loaded();
+
+                let page_text = if page_text_loaded {
+                    page.try_get_page_text()
+                } else {
+                    None
+                };
+
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(RichText::new(title).size(30.0));
 
@@ -202,6 +212,16 @@ impl WikipediaGraphApp {
                     }
 
                     self.node_position_ui(ui, index);
+
+                    ui.collapsing("Struct data", |ui| {
+                        ui.label(format!("pathinfo: {}", pathinfo));
+                        ui.label(format!("page text loaded: {}", page_text_loaded));
+                        if page_text_loaded {
+                            if let Some(page_text) = page_text {
+                                egui::ScrollArea::both().show(ui, |ui| ui.label(page_text));
+                            }
+                        }
+                    });
 
                     ui.separator();
 
