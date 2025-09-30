@@ -87,6 +87,10 @@ impl WikipediaPage {
         self
     }
 
+    pub fn is_page_text_loaded(&self) -> bool {
+        self.page_text.is_some()
+    }
+
     pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
         let mut page = WikipediaPage::from_title("Special:Random");
 
