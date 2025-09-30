@@ -222,7 +222,7 @@ impl WikipediaPage {
     }
 
     pub fn title(&self) -> String {
-        capitalize(self.pathinfo.replace("_", " "))
+        capitalize(url_encor::decode(self.pathinfo.replace("_", " ").as_str()))
     }
 
     fn get_linked_pages_from_page_text(page_text: &String) -> Vec<WikipediaPage> {
