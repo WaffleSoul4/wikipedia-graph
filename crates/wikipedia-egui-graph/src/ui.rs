@@ -48,13 +48,13 @@ impl WikipediaGraphApp {
     pub fn layout_settings(&mut self, ui: &mut Ui) {
         let layout_settings = &mut self.layout_settings;
 
-        ui.add(Slider::new(&mut layout_settings.c_attract, 0.0..=10.0).text("c_attract"));
-        ui.add(Slider::new(&mut layout_settings.c_repulse, 0.0..=10.0).text("c_repulse"));
-        ui.add(Slider::new(&mut layout_settings.damping, 0.0..=10.0).text("damping"));
-        ui.add(Slider::new(&mut layout_settings.epsilon, 0.0..=10.0).text("epsilon"));
-        ui.add(Slider::new(&mut layout_settings.k_scale, 0.0..=10.0).text("k_scale"));
+        ui.add(Slider::new(&mut layout_settings.c_attract, 0.0..=10.0).text("Attraction"));
+        ui.add(Slider::new(&mut layout_settings.c_repulse, 0.0..=10.0).text("Repulsion"));
+        ui.add(Slider::new(&mut layout_settings.damping, 0.0..=10.0).text("Damping"));
+        ui.add(Slider::new(&mut layout_settings.epsilon, 0.0..=10.0).text("Epsilon"));
+        ui.add(Slider::new(&mut layout_settings.k_scale, 0.0..=10.0).text("Scale"));
         ui.add(Slider::new(&mut layout_settings.dt, 0.0..=10.0).text("dt"));
-        ui.add(Slider::new(&mut layout_settings.max_step, 0.0..=50.0).text("dt"));
+        ui.add(Slider::new(&mut layout_settings.max_step, 0.0..=50.0).text("Max step"));
         ui.checkbox(&mut layout_settings.is_running, "is running");
     }
 
@@ -69,9 +69,8 @@ impl WikipediaGraphApp {
         ui.horizontal(|ui| {
             ui.label("Zoom:");
             ui.add(
-                DragValue::new(&mut meta.zoom)
-                    .speed(0.1)
-                    .range(0.001..=f32::MAX)
+                Slider::new(&mut meta.zoom, 100.0..=0.005)
+                    .logarithmic(true)
                     .custom_formatter(|zoom, _| format!("{zoom:.2}")),
             );
         });
@@ -115,6 +114,12 @@ impl WikipediaGraphApp {
 
     pub fn node_editor(&mut self, ui: &mut Ui) {
         let node_editor = &mut self.node_editor;
+
+        if ui.button("Clear all nodes").clicked() {
+            self.graph.g_mut().clear();
+
+            self.selected_node = None;
+        }
 
         ui.add(
             TextEdit::singleline(&mut node_editor.page_title).hint_text("Enter page title here"),
