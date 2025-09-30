@@ -6,21 +6,10 @@ use wikipedia_graph::WikipediaPage;
 fn page_creation() {
     let url = Url::parse("https://wikipedia.org/wiki/Waffle").unwrap();
     let page_1 = WikipediaPage::try_from_url(url).unwrap();
-    let page_2 = WikipediaPage::from_path("/wiki/Waffle").unwrap();
+    let page_2 = WikipediaPage::try_from_path("/wiki/Waffle").unwrap();
     let page_3 = WikipediaPage::from_title("Waffle");
     assert_eq!(page_1.pathinfo(), page_2.pathinfo());
     assert_eq!(page_2.pathinfo(), page_3.pathinfo());
-}
-
-#[test]
-fn pathinfo_lowercase() {
-    let url = Url::parse("https://wikipedia.org/wiki/Waffle").unwrap();
-    let page_1 = WikipediaPage::try_from_url(url).unwrap();
-    let page_2 = WikipediaPage::from_path("/wiki/Waffle").unwrap();
-    let page_3 = WikipediaPage::from_title("Waffle");
-    assert!(page_1.pathinfo().chars().all(|char| char.is_lowercase()));
-    assert!(page_2.pathinfo().chars().all(|char| char.is_lowercase()));
-    assert!(page_3.pathinfo().chars().all(|char| char.is_lowercase()));
 }
 
 #[test]

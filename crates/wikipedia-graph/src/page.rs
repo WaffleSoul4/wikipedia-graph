@@ -119,12 +119,12 @@ impl WikipediaPage {
         let title: String = title.into();
 
         WikipediaPage {
-            pathinfo: title.to_lowercase().replace(" ", "_"),
+            pathinfo: title.replace(" ", "_"),
             page_text: None,
         }
     }
 
-    pub fn from_path(path: impl Into<String>) -> Result<Self, WikipediaUrlError> {
+    pub fn try_from_path(path: impl Into<String>) -> Result<Self, WikipediaUrlError> {
         let base = Url::parse("https://wikipedia.org/wiki/")
             .expect("Url 'https://wikipedia.org/wiki/' is invalid");
 
@@ -151,7 +151,7 @@ impl WikipediaPage {
         base.make_relative(&url)
             .ok_or(WikipediaUrlError::InvalidPath)
             .map(|val| WikipediaPage {
-                pathinfo: val.to_lowercase(),
+                pathinfo: val,
                 page_text: None,
             })
     }
@@ -234,7 +234,7 @@ impl WikipediaPage {
                     .all(|page| !capture_data.0.contains(page))
             })
             .filter_map(|capture_data| {
-                WikipediaPage::from_path(capture_data.1[0])
+                WikipediaPage::try_from_path(capture_data.1[0])
                     .ok()
                     .map(|mut page| {
                         page.page_text = Some(capture_data.1[1].to_string());
@@ -251,7 +251,7 @@ impl WikipediaPage {
         )
         .expect("Title regex failed to compile");
 
-        let title = page_text
+        Ok(page_text
             .lines()
             .filter(|l| l.contains("<link rel=\"canonical\""))
             .filter_map(|l| regex.captures(l))
@@ -259,10 +259,7 @@ impl WikipediaPage {
             .ok_or(PathinfoParseError)?
             .extract::<2>()
             .1[1]
-            .to_string()
-            .to_lowercase();
-
-        Ok(title)
+            .to_string())
     }
 
     pub fn try_get_linked_pages(&self) -> Option<Vec<WikipediaPage>> {
