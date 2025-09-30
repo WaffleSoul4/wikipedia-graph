@@ -87,6 +87,18 @@ impl WikipediaPage {
         self
     }
 
+    pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
+        let mut page = WikipediaPage::from_title("Special:Random");
+
+        page.load_page_text(client)?;
+
+        if let Err(e) = page.try_update_pathinfo() {
+            log::error!("{e}")
+        }
+
+        Ok(page)
+    }
+
     pub fn pathinfo(&self) -> &String {
         &self.pathinfo
     }
@@ -142,6 +154,14 @@ impl WikipediaPage {
                 pathinfo: val.to_lowercase(),
                 page_text: None,
             })
+    }
+
+    pub fn try_update_pathinfo(&mut self) -> Result<&mut Self, PathinfoParseError> {
+        if let Some(page_text) = self.page_text.take() {
+            self.pathinfo = Self::get_pathinfo_from_page_text(&page_text)?
+        }
+
+        Ok(self)
     }
 
     cfg_if::cfg_if! {

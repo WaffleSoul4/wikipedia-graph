@@ -134,19 +134,7 @@ impl WikipediaGraphApp {
 
                 match page.payload_mut().load_page_text(&self.client) {
                     Ok(_) => {
-                        if let Some(title) = page.payload().try_get_title() {
-                            match title {
-                                Ok(title) => page.set_label(title),
-                                Err(e) => {
-                                    error!(
-                                        "Failed to load '{}': {e}",
-                                        page.payload()
-                                            .url_with_lang(self.language)
-                                            .expect("Failed to make URL with selected language")
-                                    )
-                                }
-                            }
-                        }
+                        page.set_label(page.payload().title());
                     }
                     Err(e) => {
                         let payload = page.payload().clone();
@@ -195,18 +183,7 @@ impl WikipediaGraphApp {
             Some(node) => {
                 let page = node.payload_mut();
 
-                let title = match page.try_get_title() {
-                    Some(Ok(title)) => title,
-                    // Don't want to spam the logs, the error should already be there
-                    Some(Err(_)) => "ERROR, check logs".to_string(),
-                    None => {
-                        if let Err(e) = page.load_page_text(&self.client) {
-                            error!("Failed to load selected page text, deselecting node: {e}");
-                            self.selected_node = None;
-                        }
-                        "Loading...".to_string()
-                    }
-                };
+                let title = page.title();
 
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.label(RichText::new(title).size(30.0));

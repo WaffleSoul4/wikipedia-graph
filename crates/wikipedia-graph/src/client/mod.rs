@@ -93,9 +93,9 @@ pub trait WikipediaClientCommon {
 
         let base_url = self.base_url().expect("Selected language is invalid");
 
-        if pathinfo.eq("Special:Random") {
+        if pathinfo.eq("special:random") {
             return Ok(
-                Url::parse(format!("{}Special:Random", base_url.to_string()).as_str())
+                Url::parse(format!("{}special:random", base_url.to_string()).as_str())
                     .expect("Random URL is not valid"),
             );
         }

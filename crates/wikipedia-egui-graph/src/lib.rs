@@ -172,6 +172,7 @@ impl InternetStatus {
             }
             Err(e) => {
                 error!("Internet test failed: {e}");
+
                 match self.0 {
                     InternetStatusInner::Available => {
                         self.set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e)
@@ -278,19 +279,7 @@ impl WikipediaGraphApp {
 
                     node.set_location(pos + parent_pos.to_vec2());
 
-                    let title = node.payload().try_get_title();
-
-                    let title = match title {
-                        Some(Ok(title)) => title,
-                        Some(Err(err)) => {
-                            error!("{err}");
-                            "ERROR".to_string()
-                        }
-                        None => {
-                            error!("Failed to aquire title from link");
-                            "ERROR".to_string()
-                        }
-                    };
+                    let title = node.payload().title();
 
                     node.set_label(title);
                 }
