@@ -11,14 +11,7 @@ use crate::client::{HttpError, WikipediaClient};
 pub struct WikipediaPage {
     // This is called 'pathinfo' it's the part of the url after the /
     pathinfo: String,
-    page_data: WikipediaPageData,
-}
-
-#[derive(Debug, Clone)]
-enum WikipediaPageData {
-    FullText(String),
-    Minimal { title: String },
-    None,
+    page_text: Option<String>,
 }
 
 #[derive(Error, Debug)]
@@ -26,8 +19,8 @@ enum WikipediaPageData {
 pub struct LanguageInvalidError;
 
 #[derive(Debug, Error)]
-#[error("Failed to parse title from body")]
-pub struct TitleParseError;
+#[error("Failed to parse pathinfo from body")]
+pub struct PathinfoParseError;
 
 #[derive(Debug, Error)]
 pub enum WikipediaUrlError {
@@ -82,20 +75,20 @@ impl WikipediaPage {
     const FILTERED_PAGES: [&str; 1] = ["Wayback Machine"];
 
     pub fn set_page_text(&mut self, data: String) -> &mut Self {
-        self.page_data = WikipediaPageData::FullText(data);
+        let pathinfo_new = Self::get_pathinfo_from_page_text(&data);
+
+        self.page_text = Some(data);
+
+        match pathinfo_new {
+            Ok(pathinfo) => self.pathinfo = pathinfo,
+            Err(e) => log::error!("{e}"),
+        }
 
         self
     }
 
     pub fn pathinfo(&self) -> &String {
         &self.pathinfo
-    }
-
-    pub fn random() -> Self {
-        WikipediaPage {
-            pathinfo: "Special:Random".to_string(),
-            page_data: WikipediaPageData::None,
-        }
     }
 
     pub fn url_with_lang(&self, language: Language) -> Result<Url, LanguageInvalidError> {
@@ -114,8 +107,8 @@ impl WikipediaPage {
         let title: String = title.into();
 
         WikipediaPage {
-            pathinfo: title.replace(" ", "_"),
-            page_data: WikipediaPageData::None,
+            pathinfo: title.to_lowercase().replace(" ", "_"),
+            page_text: None,
         }
     }
 
@@ -146,8 +139,8 @@ impl WikipediaPage {
         base.make_relative(&url)
             .ok_or(WikipediaUrlError::InvalidPath)
             .map(|val| WikipediaPage {
-                pathinfo: val,
-                page_data: WikipediaPageData::None,
+                pathinfo: val.to_lowercase(),
+                page_text: None,
             })
     }
 
@@ -155,8 +148,8 @@ impl WikipediaPage {
         if #[cfg(feature = "client")] {
             // Does not load the body into memory
             pub fn get_page_text(&self, client: &WikipediaClient) -> Result<String, HttpError> {
-                match &self.page_data {
-                    WikipediaPageData::FullText(t) => Ok(t.clone()),
+                match &self.page_text {
+                    Some(t) => Ok(t.clone()),
                     _ => client.get(self.pathinfo.clone()),
                 }
             }
@@ -168,51 +161,41 @@ impl WikipediaPage {
             ) -> Result<&mut Self, HttpError> {
                 let page_text = client.get(self.pathinfo.clone())?;
 
-                self.page_data = WikipediaPageData::FullText(page_text);
+                let pathinfo_new = Self::get_pathinfo_from_page_text(&page_text);
+
+                self.page_text = Some(page_text);
+
+                match pathinfo_new {
+                    Ok(pathinfo) => self.pathinfo = pathinfo,
+                    Err(e) => log::error!("{e}"),
+                }
 
                 Ok(self)
             }
 
             pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-                self.page_data = WikipediaPageData::FullText(self.get_page_text(client)?);
+                let text = self.get_page_text(client)?;
+
+                self.page_text = Some(text);
 
                 Ok(self)
             }
 
-            pub fn minimize(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-                match &self.page_data {
-                    WikipediaPageData::Minimal { title: _ } => {}
-                    _ => {
-                        let text = self.get_page_text(client)?;
+            pub fn unload_body(&mut self) -> &mut Self {
+                self.page_text = None;
 
-                        let title =
-                            WikipediaPage::get_title_from_page_text(&text).expect("Failed to find title");
-
-                        self.page_data = WikipediaPageData::Minimal { title };
-                    }
-                }
-
-                Ok(self)
+                self
             }
         }
     }
 
     // All the 'try_...' functions mean is that they don't make any requests
     pub fn try_get_page_text(&self) -> Option<String> {
-        if let WikipediaPageData::FullText(text) = self.page_data.clone() {
-            // This clone is technically uneccesary
-            Some(text)
-        } else {
-            None
-        }
+        self.page_text.clone()
     }
 
-    pub fn try_get_title(&self) -> Option<Result<String, TitleParseError>> {
-        match &self.page_data {
-            WikipediaPageData::FullText(t) => Some(Self::get_title_from_page_text(t)),
-            WikipediaPageData::Minimal { title } => Some(Ok(title.clone())),
-            WikipediaPageData::None => None,
-        }
+    pub fn title(&self) -> String {
+        capitalize(self.pathinfo.replace("_", " "))
     }
 
     fn get_linked_pages_from_page_text(page_text: &String) -> Vec<WikipediaPage> {
@@ -233,17 +216,16 @@ impl WikipediaPage {
             .filter_map(|capture_data| {
                 WikipediaPage::from_path(capture_data.1[0])
                     .ok()
-                    .and_then(|mut page| {
-                        page.page_data = WikipediaPageData::Minimal {
-                            title: capture_data.1[1].to_string(),
-                        };
-                        Some(page)
+                    .map(|mut page| {
+                        page.page_text = Some(capture_data.1[1].to_string());
+
+                        page
                     })
             })
             .collect()
     }
 
-    fn get_title_from_page_text(page_text: &String) -> Result<String, TitleParseError> {
+    fn get_pathinfo_from_page_text(page_text: &String) -> Result<String, PathinfoParseError> {
         let regex = Regex::new(
             r#"<link rel=\"canonical\" href=\"(https:\/\/[a-zA-Z\/\.]{2}\.wikipedia.org\/wiki\/(.*))\">"#,
         )
@@ -254,20 +236,47 @@ impl WikipediaPage {
             .filter(|l| l.contains("<link rel=\"canonical\""))
             .filter_map(|l| regex.captures(l))
             .next()
-            .ok_or(TitleParseError)?
+            .ok_or(PathinfoParseError)?
             .extract::<2>()
             .1[1]
             .to_string()
-            .replace("_", " ");
+            .to_lowercase();
 
         Ok(title)
     }
 
     pub fn try_get_linked_pages(&self) -> Option<Vec<WikipediaPage>> {
-        if let WikipediaPageData::FullText(text) = &self.page_data {
+        if let Some(text) = &self.page_text {
             return Some(WikipediaPage::get_linked_pages_from_page_text(text));
         }
 
         None
     }
+}
+
+fn capitalize(input: String) -> String {
+    let mut capitialize: bool = true;
+
+    input
+        .trim()
+        .replace("_", " ")
+        .chars()
+        .map(|char| match (char.is_whitespace(), capitialize) {
+            (true, true) => '*',
+            (false, true) => {
+                capitialize = false;
+                if let Some(uppercase) = char.to_uppercase().next() {
+                    uppercase
+                } else {
+                    char
+                }
+            }
+            (true, false) => {
+                capitialize = true;
+                char
+            }
+            _ => char,
+        })
+        .collect::<String>()
+        .replace("*", "")
 }

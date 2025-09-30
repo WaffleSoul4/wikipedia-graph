@@ -3,7 +3,7 @@ mod graphs;
 use url::Url;
 use wikipedia_graph::WikipediaPage;
 #[test]
-fn url_validation() {
+fn page_creation() {
     let url = Url::parse("https://wikipedia.org/wiki/Waffle").unwrap();
     let page_1 = WikipediaPage::try_from_url(url).unwrap();
     let page_2 = WikipediaPage::from_path("/wiki/Waffle").unwrap();
@@ -11,6 +11,18 @@ fn url_validation() {
     assert_eq!(page_1.pathinfo(), page_2.pathinfo());
     assert_eq!(page_2.pathinfo(), page_3.pathinfo());
 }
+
+#[test]
+fn pathinfo_lowercase() {
+    let url = Url::parse("https://wikipedia.org/wiki/Waffle").unwrap();
+    let page_1 = WikipediaPage::try_from_url(url).unwrap();
+    let page_2 = WikipediaPage::from_path("/wiki/Waffle").unwrap();
+    let page_3 = WikipediaPage::from_title("Waffle");
+    assert!(page_1.pathinfo().chars().all(|char| char.is_lowercase()));
+    assert!(page_2.pathinfo().chars().all(|char| char.is_lowercase()));
+    assert!(page_3.pathinfo().chars().all(|char| char.is_lowercase()));
+}
+
 #[test]
 fn linked_pages() {
     let page = common::multekrem_page();
@@ -31,11 +43,5 @@ fn linked_pages() {
 fn get_title() {
     let page = common::multekrem_page();
 
-    assert_eq!(
-        page.try_get_title()
-            .expect("Page contents not loaded")
-            .expect("Failed to parse title")
-            .as_str(),
-        "Multekrem"
-    )
+    assert_eq!(page.title().as_str(), "Multekrem")
 }

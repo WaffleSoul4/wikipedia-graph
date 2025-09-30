@@ -91,13 +91,7 @@ pub trait WikipediaGraph<NodeIndex: Copy + Indexable> {
         self.node_indicies()
             .iter()
             .find(|(node_page, _)| {
-                page.pathinfo() == node_page.pathinfo()
-                    || page
-                        .try_get_title()
-                        .map(|result| result.unwrap_or("FAILED".to_string()))
-                        == node_page
-                            .try_get_title()
-                            .map(|result| result.unwrap_or("FAILED".to_string()))
+                page.pathinfo() == node_page.pathinfo() || page.pathinfo() == node_page.pathinfo()
             })
             .map(|(_, index)| *index)
     }
