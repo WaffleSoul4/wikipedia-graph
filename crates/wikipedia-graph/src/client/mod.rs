@@ -9,7 +9,6 @@ use url::Url;
 const CLIENT_REDIRECTS: u32 = 2;
 
 pub struct WikipediaClientConfig {
-    // This does need fixing
     timeout: Option<Duration>,
     // Only non defaults
     headers: HeaderMap<HeaderValue>,
@@ -154,4 +153,3 @@ mod test {
         }
     }
 }
-

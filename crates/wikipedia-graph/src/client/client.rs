@@ -3,7 +3,11 @@ use crate::client::WikipediaClientCommon;
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
 use isolang::Language;
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 use url::Url;
 
@@ -25,12 +29,15 @@ pub enum HttpError {
     TooManyRedirects,
     #[doc(hidden)]
     #[error("This is solely an inner type used for detecting redirects")]
-    Redirect,
+    Redirect(String),
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
+    #[error("Failed to unlock mutex containing response")]
+    LockError,
 }
 
 pub struct WikipediaClient {
+    timeout: Option<Duration>,
     language: Language,
     headers: http::HeaderMap,
 }
@@ -59,50 +66,83 @@ impl WikipediaClient {
 
         let mut redirects = crate::client::CLIENT_REDIRECTS;
 
-        while redirects != 0 {
+        'redirect_loop: while redirects != 0 {
+            let response_lock: Arc<Mutex<Option<Result<String, HttpError>>>> =
+                Arc::new(Mutex::new(None));
+
+            let response_lock_thread = response_lock.clone();
+
+            // Please help this api doesn't work with wasm ahh
+            ehttp::fetch(request.clone(), move |response| {
+                *response_lock_thread.lock().unwrap() = Some(
+                    response
+                        .map_err(|err| HttpError::Backend(err))
+                        .and_then(|response| match StatusCode::from_u16(response.status) {
+                            Ok(code) => {
+                                if code.is_redirection() {
+                                    if let Some(redirect_url) =
+                                        response.headers.get(http::header::LOCATION.as_str())
+                                    {
+                                        return Err(HttpError::Redirect(redirect_url.to_string()));
+                                    }
+                                }
+
+                                if code.as_u16() == 404 {
+                                    return Err(HttpError::PageNotFound)
+                                }
+
+                                if code.is_success() {
+                                    return Ok(response);
+                                }
+
+                                Err(HttpError::Unknown(response.status))
+                            }
+                            Err(_) => Err(HttpError::Unknown(response.status)),
+                        })
+                        .and_then(|body: Response| {
+                            body.text()
+                                .map(|text| text.to_string())
+                                .ok_or(HttpError::NoPageBody)
+                        }),
+                );
+            });
+
             redirects -= 1;
 
-            let response = ehttp::fetch_blocking(&request);
+            let timeout_start = Instant::now();
 
-            let response = response
-                .map_err(|err| HttpError::Backend(err))
-                .and_then(|response| match StatusCode::from_u16(response.status) {
-                    Ok(code) => {
-                        if code.is_redirection() {
-                            if let Some(redirect_url) = response.headers.get(http::header::LOCATION.as_str()) {
-                                request.url = redirect_url.to_string();
+            loop {
+                match self.timeout {
+                    Some(timeout) if Instant::now().duration_since(timeout_start) > timeout => return Err(HttpError::Timeout),
+                    _ => {},
+                }
 
-                                return Err(HttpError::Redirect)
+                match response_lock.try_lock() {
+                    Ok(mut t) => match t.take() {
+                        Some(response) => {
+                            if let Err(HttpError::Redirect(url)) = response {
+                                request.url = url;
+                                continue 'redirect_loop;
                             }
-                        }
 
-                        if code.is_success() {
-                            return Ok(response)
+                            return response;
                         }
-                        
-                        Err(HttpError::Unknown(response.status))
+                        None => std::thread::sleep(Duration::from_millis(100)),
                     },
-                    Err(_) => Err(HttpError::Unknown(response.status)),
-                })
-                .and_then(|body: Response| {
-                    body.text()
-                        .map(|text| text.to_string())
-                        .ok_or(HttpError::NoPageBody)
-                });
-            
-            if let Err(HttpError::Redirect) = response {
-                continue;
+                    Err(e) => {
+                        log::error!("Failed to aquire lock from client thread: {e}");
+                        return Err(HttpError::LockError);
+                    }
+                }
             }
-
-            return response
         }
 
         Err(HttpError::TooManyRedirects)
-
     }
 
     pub fn from_config(config: WikipediaClientConfig) -> Result<Self, HttpError> {
         Ok(WikipediaClient {
+            timeout: config.timeout,
             language: config.language,
             headers: config.headers,
         })
