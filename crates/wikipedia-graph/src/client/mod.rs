@@ -1,24 +1,18 @@
+mod client;
+pub use client::*;
+
+use http::{HeaderMap, HeaderName, HeaderValue};
 use std::{str::FromStr, time::Duration};
 use thiserror::Error;
-use ureq::http::{HeaderMap, HeaderName, HeaderValue};
 use url::Url;
-
-#[cfg(not(target_arch = "wasm32"))]
-mod native;
-#[cfg(not(target_arch = "wasm32"))]
-pub use native::*;
-
-#[cfg(target_arch = "wasm32")]
-pub mod wasm;
-#[cfg(target_arch = "wasm32")]
-pub use wasm::*;
 
 const CLIENT_REDIRECTS: u32 = 2;
 
 pub struct WikipediaClientConfig {
+    // This does need fixing
     timeout: Option<Duration>,
     // Only non defaults
-    headers: ureq::http::HeaderMap<HeaderValue>,
+    headers: HeaderMap<HeaderValue>,
     language: isolang::Language,
 }
 
@@ -160,3 +154,4 @@ mod test {
         }
     }
 }
+
