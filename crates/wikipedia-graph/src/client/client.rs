@@ -4,9 +4,7 @@ use ehttp::{Headers, Request, Response};
 use http::StatusCode;
 use isolang::Language;
 use std::{
-    fmt::Display,
-    sync::{Arc, Mutex},
-    time::{Duration, Instant},
+    fmt::Display, sync::{Arc, Mutex}, thread, time::{Duration, Instant}
 };
 use thiserror::Error;
 use url::Url;
@@ -32,8 +30,8 @@ pub enum HttpError {
     Redirect(String),
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
-    #[error("Failed to unlock mutex containing response")]
-    LockError,
+    #[error("Failed to send data containing response")]
+    SendError,
 }
 
 pub struct WikipediaClient {
@@ -67,14 +65,10 @@ impl WikipediaClient {
         let mut redirects = crate::client::CLIENT_REDIRECTS;
 
         'redirect_loop: while redirects != 0 {
-            let response_lock: Arc<Mutex<Option<Result<String, HttpError>>>> =
-                Arc::new(Mutex::new(None));
+            let (response_writer, response_reader) = std::sync::mpsc::channel();
 
-            let response_lock_thread = response_lock.clone();
-
-            // Please help this api doesn't work with wasm ahh
             ehttp::fetch(request.clone(), move |response| {
-                *response_lock_thread.lock().unwrap() = Some(
+                if let Err(e) = response_writer.send(Some(
                     response
                         .map_err(|err| HttpError::Backend(err))
                         .and_then(|response| match StatusCode::from_u16(response.status) {
@@ -83,12 +77,14 @@ impl WikipediaClient {
                                     if let Some(redirect_url) =
                                         response.headers.get(http::header::LOCATION.as_str())
                                     {
+                                        log::info!("Redirecting to {redirect_url}");
+
                                         return Err(HttpError::Redirect(redirect_url.to_string()));
                                     }
                                 }
 
                                 if code.as_u16() == 404 {
-                                    return Err(HttpError::PageNotFound)
+                                    return Err(HttpError::PageNotFound);
                                 }
 
                                 if code.is_success() {
@@ -99,25 +95,21 @@ impl WikipediaClient {
                             }
                             Err(_) => Err(HttpError::Unknown(response.status)),
                         })
-                        .and_then(|body: Response| {
-                            body.text()
+                        .and_then(|response: Response| {
+                            response.text()
                                 .map(|text| text.to_string())
                                 .ok_or(HttpError::NoPageBody)
                         }),
-                );
+                )) {
+                    panic!("Failed to send response to app: {e}")
+                }
+
             });
 
             redirects -= 1;
 
-            let timeout_start = Instant::now();
-
             loop {
-                match self.timeout {
-                    Some(timeout) if Instant::now().duration_since(timeout_start) > timeout => return Err(HttpError::Timeout),
-                    _ => {},
-                }
-
-                match response_lock.try_lock() {
+                match response_reader.recv_timeout(self.timeout.unwrap_or(Duration::from_hours(16))) {
                     Ok(mut t) => match t.take() {
                         Some(response) => {
                             if let Err(HttpError::Redirect(url)) = response {
@@ -127,11 +119,12 @@ impl WikipediaClient {
 
                             return response;
                         }
-                        None => std::thread::sleep(Duration::from_millis(100)),
+                        None => {
+                            return Err(HttpError::NoPageBody)
+                        }
                     },
-                    Err(e) => {
-                        log::error!("Failed to aquire lock from client thread: {e}");
-                        return Err(HttpError::LockError);
+                    Err(_) => {
+                        return Err(HttpError::Timeout)
                     }
                 }
             }
