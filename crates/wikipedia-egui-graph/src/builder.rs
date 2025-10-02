@@ -6,7 +6,6 @@ use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::prelude::StableDiGraph;
-use std::time::Duration;
 use wikipedia_graph::{Language, WikipediaClient, WikipediaClientConfig, WikipediaPage};
 
 // Don't worry, I might add more
@@ -63,15 +62,23 @@ impl WikipediaGraphAppBuilder {
             .with_zoom_and_pan_enabled(true)
             .with_fit_to_screen_enabled(false);
 
+        #[cfg(not(target_arch = "wasm32"))]
         let (event_writer, event_reader) = crossbeam::channel::unbounded();
+
+        #[cfg(target_arch = "wasm32")]
+        let event_buffer: std::rc::Rc<std::cell::RefCell<Vec<egui_graphs::events::Event>>> = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
 
         WikipediaGraphApp {
             graph: graph,
             interaction_settings,
             navigation_settings,
             layout_settings: LayoutSettings::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             event_writer,
+            #[cfg(not(target_arch = "wasm32"))]
             event_reader,
+            #[cfg(target_arch = "wasm32")]
+            event_buffer,
             client,
             frame_counter: FrameCounter::default(),
             selected_node,

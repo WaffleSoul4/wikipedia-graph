@@ -12,7 +12,7 @@ use egui_graphs::{
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::graph::NodeIndex;
-use std::time::{Duration, Instant};
+use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
 use wikipedia_graph::{HttpError, Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
 
 use crate::builder::WikipediaGraphAppBuilder;
@@ -22,8 +22,12 @@ pub struct WikipediaGraphApp {
     pub interaction_settings: SettingsInteraction,
     pub navigation_settings: SettingsNavigation,
     pub layout_settings: LayoutSettings,
+    #[cfg(not(target_arch = "wasm32"))]
     pub event_writer: Sender<Event>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub event_reader: Receiver<Event>,
+    #[cfg(target_arch = "wasm32")]
+    pub event_buffer: Rc<RefCell<Vec<Event>>>,
     pub client: WikipediaClient,
     pub frame_counter: FrameCounter,
     pub selected_node: Option<NodeIndex>,
@@ -395,7 +399,11 @@ impl App for WikipediaGraphApp {
 
                     let style = SettingsStyle::new().with_labels_always(self.style_settings.labels);
 
+                    #[cfg(not(target_arch = "wasm32"))]
                     let event = self.event_reader.try_recv().ok();
+
+                    #[cfg(target_arch = "wasm32")]
+                    let event = self.event_buffer.borrow_mut().pop();
 
                     if let Some(event) = event {
                         match event {
@@ -449,9 +457,16 @@ impl App for WikipediaGraphApp {
                         LayoutForceDirected<FruchtermanReingoldWithCenterGravity>,
                     >::new(&mut self.graph)
                     .with_interactions(&self.interaction_settings)
-                    .with_event_sink(&self.event_writer)
                     .with_navigations(&self.navigation_settings)
                     .with_styles(&style);
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    { view = view.with_event_sink(&self.event_writer); }
+                    
+
+                    #[cfg(target_arch = "wasm32")]
+                    { view = view.with_event_sink(&self.event_buffer); }
+
 
                     egui_graphs::GraphView::<
                         (),
