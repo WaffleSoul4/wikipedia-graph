@@ -12,7 +12,12 @@ use egui_graphs::{
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::graph::NodeIndex;
-use std::{cell::RefCell, rc::Rc, time::{Duration, Instant}};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+};
+use web_time::{Duration, Instant};
+
 use wikipedia_graph::{HttpError, Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
 
 use crate::builder::WikipediaGraphAppBuilder;
@@ -461,12 +466,14 @@ impl App for WikipediaGraphApp {
                     .with_styles(&style);
 
                     #[cfg(not(target_arch = "wasm32"))]
-                    { view = view.with_event_sink(&self.event_writer); }
-                    
+                    {
+                        view = view.with_event_sink(&self.event_writer);
+                    }
 
                     #[cfg(target_arch = "wasm32")]
-                    { view = view.with_event_sink(&self.event_buffer); }
-
+                    {
+                        view = view.with_event_sink(&self.event_buffer);
+                    }
 
                     egui_graphs::GraphView::<
                         (),

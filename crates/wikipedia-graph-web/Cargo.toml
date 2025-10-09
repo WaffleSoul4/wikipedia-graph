@@ -8,6 +8,8 @@ license.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+wasm-log = "*"
+log.workspace = true
 console_error_panic_hook = "0.1"
 wasm-bindgen = "=0.2.103"
 wasm-bindgen-futures = "0.4"

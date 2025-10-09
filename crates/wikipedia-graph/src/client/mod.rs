@@ -64,10 +64,14 @@ impl WikipediaClientConfig {
 
 impl Default for WikipediaClientConfig {
     fn default() -> Self {
+        let mut headers = HeaderMap::new();
+
+        headers.append(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_str("*").unwrap());
+
         WikipediaClientConfig {
             language: isolang::Language::from_639_1("en").expect("Language 'en' does not exist"),
             timeout: Some(Duration::from_secs(5)),
-            headers: HeaderMap::new(),
+            headers,
         }
         .user_agent(USER_AGENT)
         .expect("Default headers are invalid")

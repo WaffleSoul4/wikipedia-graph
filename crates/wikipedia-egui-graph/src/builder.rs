@@ -66,7 +66,8 @@ impl WikipediaGraphAppBuilder {
         let (event_writer, event_reader) = crossbeam::channel::unbounded();
 
         #[cfg(target_arch = "wasm32")]
-        let event_buffer: std::rc::Rc<std::cell::RefCell<Vec<egui_graphs::events::Event>>> = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let event_buffer: std::rc::Rc<std::cell::RefCell<Vec<egui_graphs::events::Event>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
 
         WikipediaGraphApp {
             graph: graph,

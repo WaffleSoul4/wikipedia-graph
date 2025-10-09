@@ -6,11 +6,12 @@ license.workspace = true
 
 
 [dependencies]
-
 # Necessary
 url = { version = "2.5" }
 isolang = { version = "2.0" }
 url_encor = { version = "1.0.3" }
+web-time = { version = "1.1" }
+wasm_thread = { version = "0.3" }
 cfg-if = "1.0"
 itertools = "0.14.0"
 regex = "1.11.2"

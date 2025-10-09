@@ -4,8 +4,9 @@ use ehttp::{Headers, Request, Response};
 use http::StatusCode;
 use isolang::Language;
 use std::{
-    fmt::Display, sync::{Arc, Mutex}, thread, time::{Duration, Instant}
+    fmt::Display,
 };
+use web_time::{Duration};
 use thiserror::Error;
 use url::Url;
 
@@ -30,8 +31,8 @@ pub enum HttpError {
     Redirect(String),
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
-    #[error("Failed to send data containing response")]
-    SendError,
+    #[error("Failed to sync data containing response")]
+    SyncError,
 }
 
 pub struct WikipediaClient {
@@ -41,10 +42,11 @@ pub struct WikipediaClient {
 }
 
 impl WikipediaClient {
-    pub fn get<T: Display>(&self, pathinfo: T) -> Result<String, HttpError> {
+    pub fn request_from_pathinfo<T: Display>(
+        &self,
+        pathinfo: T,
+    ) -> Result<Request, url::ParseError> {
         let url: Url = self.url_from_pathinfo(pathinfo)?;
-
-        log::info!("Loading page from url '{}'", &url);
 
         let mut request = Request::get(url);
 
@@ -60,56 +62,81 @@ impl WikipediaClient {
                             .to_string(),
                     );
                     headers
-                });
+                });        
+
+        Ok(request)
+    }
+
+    fn parse_status_code(code: StatusCode, response: Response) -> Result<Response, HttpError> {
+        if code.is_redirection() {
+            if let Some(redirect_url) = response.headers.get(http::header::LOCATION.as_str()) {
+                log::info!("Redirecting to {redirect_url}");
+
+                return Err(HttpError::Redirect(redirect_url.to_string()));
+            }
+        }
+
+        if code.as_u16() == 404 {
+            return Err(HttpError::PageNotFound);
+        }
+
+        if code.is_success() {
+            return Ok(response);
+        }
+
+        Err(HttpError::Unknown(response.status))
+    }
+
+    pub fn get<T: Display>(&self, pathinfo: T) -> Result<String, HttpError> {
+        let mut request = self.request_from_pathinfo(pathinfo)?;
+
+        log::info!("Loading page from url '{}'", &request.url);
 
         let mut redirects = crate::client::CLIENT_REDIRECTS;
 
         'redirect_loop: while redirects != 0 {
+            #[cfg(not(target_arch = "wasm32"))]
             let (response_writer, response_reader) = std::sync::mpsc::channel();
 
+            #[cfg(target_arch = "wasm32")]
+            let response_store: Arc<Mutex<Option<Result<String, HttpError>>>> =
+                Arc::new(Mutex::new(None));
+
+            #[cfg(target_arch = "wasm32")]
+            let response_store_clone = response_store.clone();
+
             ehttp::fetch(request.clone(), move |response| {
-                if let Err(e) = response_writer.send(Some(
-                    response
-                        .map_err(|err| HttpError::Backend(err))
-                        .and_then(|response| match StatusCode::from_u16(response.status) {
-                            Ok(code) => {
-                                if code.is_redirection() {
-                                    if let Some(redirect_url) =
-                                        response.headers.get(http::header::LOCATION.as_str())
-                                    {
-                                        log::info!("Redirecting to {redirect_url}");
+                let response_processed = response
+                    .map_err(|err| HttpError::Backend(err))
+                    .and_then(|response| match StatusCode::from_u16(response.status) {
+                        Ok(code) => WikipediaClient::parse_status_code(code, response),
+                        Err(_) => Err(HttpError::Unknown(response.status)),
+                    })
+                    .and_then(|response: Response| {
+                        response
+                            .text()
+                            .map(|text| text.to_string())
+                            .ok_or(HttpError::NoPageBody)
+                    });
 
-                                        return Err(HttpError::Redirect(redirect_url.to_string()));
-                                    }
-                                }
-
-                                if code.as_u16() == 404 {
-                                    return Err(HttpError::PageNotFound);
-                                }
-
-                                if code.is_success() {
-                                    return Ok(response);
-                                }
-
-                                Err(HttpError::Unknown(response.status))
-                            }
-                            Err(_) => Err(HttpError::Unknown(response.status)),
-                        })
-                        .and_then(|response: Response| {
-                            response.text()
-                                .map(|text| text.to_string())
-                                .ok_or(HttpError::NoPageBody)
-                        }),
-                )) {
+                #[cfg(not(target_arch = "wasm32"))]
+                if let Err(e) = response_writer.send(Some(response_processed)) {
                     panic!("Failed to send response to app: {e}")
                 }
 
+                #[cfg(target_arch = "wasm32")]
+                match response_store_clone.lock() {
+                    Ok(mut t) => *t = Some(response_processed),
+                    Err(e) => panic!("Failed to send response to app: {e}"),
+                }
             });
 
             redirects -= 1;
 
+            #[cfg(not(target_arch = "wasm32"))]
             loop {
-                match response_reader.recv_timeout(self.timeout.unwrap_or(Duration::from_hours(16))) {
+                match response_reader.recv_timeout(self.timeout.unwrap_or(Duration::from_hours(16)))
+                {
                     Ok(mut t) => match t.take() {
                         Some(response) => {
                             if let Err(HttpError::Redirect(url)) = response {
@@ -119,12 +146,35 @@ impl WikipediaClient {
 
                             return response;
                         }
-                        None => {
-                            return Err(HttpError::NoPageBody)
-                        }
+                        None => return Err(HttpError::NoPageBody),
                     },
-                    Err(_) => {
-                        return Err(HttpError::Timeout)
+                    Err(_) => return Err(HttpError::Timeout),
+                }
+            }
+
+            #[cfg(target_arch = "wasm32")]
+            {
+                let poll_start = Instant::now();
+
+                loop {
+                    match response_store.lock() {
+                        Ok(mut t) => match t.take() {
+                            Some(response) => {
+                                if let Err(HttpError::Redirect(url)) = response {
+                                    request.url = url;
+                                    continue 'redirect_loop;
+                                }
+
+                                return response;
+                            }
+                            None if Instant::now().duration_since(poll_start)
+                                > self.timeout.unwrap_or(Duration::from_hours(24)) =>
+                            {
+                                return Err(HttpError::Timeout);
+                            }
+                            None => {},
+                        },
+                        Err(_) => return Err(HttpError::SyncError),
                     }
                 }
             }
@@ -132,6 +182,7 @@ impl WikipediaClient {
 
         Err(HttpError::TooManyRedirects)
     }
+
 
     pub fn from_config(config: WikipediaClientConfig) -> Result<Self, HttpError> {
         Ok(WikipediaClient {
