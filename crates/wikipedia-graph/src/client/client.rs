@@ -3,13 +3,12 @@ use crate::client::WikipediaClientCommon;
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
 use isolang::Language;
-use std::{
-    fmt::Display,
-};
-use web_time::{Duration};
+use std::fmt::Display;
 use thiserror::Error;
 use url::Url;
+use web_time::Duration;
 
+/// The Errors that may occur with the HTTP client
 #[derive(Debug, Error)]
 pub enum HttpError {
     #[error("Error with HTTP backend: {0}")]
@@ -35,6 +34,7 @@ pub enum HttpError {
     SyncError,
 }
 
+/// A client used for getting Wikipedia pages
 pub struct WikipediaClient {
     timeout: Option<Duration>,
     language: Language,
@@ -42,6 +42,11 @@ pub struct WikipediaClient {
 }
 
 impl WikipediaClient {
+    /// Create an ehttp::Request from the pathinfo of a wikipedia page
+    ///
+    /// # Errors
+    ///
+    /// This method fails if the url with the specified pathinfo and language is invalid
     pub fn request_from_pathinfo<T: Display>(
         &self,
         pathinfo: T,
@@ -62,7 +67,7 @@ impl WikipediaClient {
                             .to_string(),
                     );
                     headers
-                });        
+                });
 
         Ok(request)
     }
@@ -87,6 +92,11 @@ impl WikipediaClient {
         Err(HttpError::Unknown(response.status))
     }
 
+    /// Get the wikipedia page at the specified pathinfo
+    ///
+    /// # Errors
+    ///
+    /// This method fails if the http request failed
     pub fn get<T: Display>(&self, pathinfo: T) -> Result<String, HttpError> {
         let mut request = self.request_from_pathinfo(pathinfo)?;
 
@@ -172,7 +182,7 @@ impl WikipediaClient {
                             {
                                 return Err(HttpError::Timeout);
                             }
-                            None => {},
+                            None => {}
                         },
                         Err(_) => return Err(HttpError::SyncError),
                     }
@@ -183,13 +193,13 @@ impl WikipediaClient {
         Err(HttpError::TooManyRedirects)
     }
 
-
-    pub fn from_config(config: WikipediaClientConfig) -> Result<Self, HttpError> {
-        Ok(WikipediaClient {
+    /// Create a WikipediaClient from a WikipediaClientConfig
+    pub fn from_config(config: WikipediaClientConfig) -> Self {
+        WikipediaClient {
             timeout: config.timeout,
             language: config.language,
             headers: config.headers,
-        })
+        }
     }
 }
 
@@ -202,6 +212,5 @@ impl WikipediaClientCommon for WikipediaClient {
 impl Default for WikipediaClient {
     fn default() -> Self {
         Self::from_config(WikipediaClientConfig::default())
-            .expect("Default ureq client is not valid")
     }
 }

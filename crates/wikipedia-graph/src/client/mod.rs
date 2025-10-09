@@ -6,21 +6,27 @@ use std::{str::FromStr, time::Duration};
 use thiserror::Error;
 use url::Url;
 
+/// Amount of redirects the client accepts
 const CLIENT_REDIRECTS: u32 = 2;
 
+/// The configuration for a WikipediaClient
+///
+/// This currently stores the same information as the client itself, but may be useful later
 pub struct WikipediaClientConfig {
     timeout: Option<Duration>,
-    // Only non defaults
+    // Only non-default headers
     headers: HeaderMap<HeaderValue>,
     language: isolang::Language,
 }
 
+/// The default user agent
 const USER_AGENT: &'static str = concat!(
     std::env!("CARGO_PKG_NAME"),
     "/",
     std::env!("CARGO_PKG_VERSION")
 );
 
+/// A wrapper around all possible header errors from the http crate
 #[derive(Error, Debug)]
 pub enum HeaderError {
     #[error("{0}")]
@@ -36,18 +42,38 @@ impl WikipediaClientConfig {
         Self::default()
     }
 
+    /// Sets the user agent of the client
+    ///
+    /// This is recommended if you're planning on making many requests
+    ///
+    /// The default value is "wikipedia-graph/{current version}"
     pub fn user_agent(self, user_agent: impl std::fmt::Display) -> Result<Self, HeaderError> {
         self.add_header(http::header::USER_AGENT, user_agent)
     }
 
+    /// Sets the request timeout, or how long to wait for a request before returning an error
+    ///
+    /// The default value is 5 seconds
     pub fn timeout(self, timeout: Option<Duration>) -> Self {
         Self { timeout, ..self }
     }
 
+    /// Sets the language of the request
+    ///
+    /// For example, the 'Waffle' page becomes into the URL 'https://{lang's iso 639-1}.wikipedia.org/wiki/Waffle'
+    ///
+    /// The default value is temporarily English
     pub fn language(self, language: isolang::Language) -> Self {
         Self { language, ..self }
     }
 
+    /// Adds a header to the request
+    ///
+    /// This is helpful for CORS authentication and probably a few other things
+    ///
+    /// # Errors
+    ///
+    /// This method fails whenever the passed headers fail to be parsed
     pub fn add_header(
         mut self,
         name: impl std::fmt::Display,
@@ -66,7 +92,10 @@ impl Default for WikipediaClientConfig {
     fn default() -> Self {
         let mut headers = HeaderMap::new();
 
-        headers.append(http::header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_str("*").unwrap());
+        headers.append(
+            http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
+            HeaderValue::from_str("*").unwrap(),
+        );
 
         WikipediaClientConfig {
             language: isolang::Language::from_639_1("en").expect("Language 'en' does not exist"),
@@ -78,7 +107,10 @@ impl Default for WikipediaClientConfig {
     }
 }
 
-pub trait WikipediaClientCommon {
+/// A trait that handles language and URL configuration for clients
+///
+/// This is currently useless, since there is only one client
+trait WikipediaClientCommon {
     fn language(&self) -> isolang::Language;
 
     fn base_url(&self) -> Result<Url, crate::page::LanguageInvalidError> {
@@ -105,13 +137,6 @@ pub trait WikipediaClientCommon {
 
 #[cfg(test)]
 mod test {
-    use crate::{WikipediaClient, WikipediaClientConfig};
-    #[test]
-    fn default_client_config_is_valid() {
-        let config = WikipediaClientConfig::default();
-
-        WikipediaClient::from_config(config).expect("Default configuration is invalid");
-    }
     mod language {
         use isolang::Language;
 
