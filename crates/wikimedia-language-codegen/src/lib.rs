@@ -92,9 +92,9 @@ impl LanguageData {
 
     fn enum_variant_unqualified(&self) -> String {
         capitalize(self.local_name.clone())
-            .replace(" ", "")
-            .replace("(", "")
-            .replace(")", "")
+            .chars()
+            .filter(|char| char.is_ascii_alphanumeric())
+            .collect() // Sorry languages 3:
     }
 
     fn code_match_arm(&self) -> String {
