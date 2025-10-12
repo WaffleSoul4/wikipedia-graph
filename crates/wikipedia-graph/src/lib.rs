@@ -23,9 +23,12 @@
 //! # }
 //! ```
 
+mod page;
+
 cfg_if::cfg_if! {
     if #[cfg(feature = "client")] {
         mod client;
+        mod graph;
 
         pub use client::WikipediaClient;
 
@@ -37,17 +40,17 @@ cfg_if::cfg_if! {
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "graphs")] {
-        mod graph;
 
         pub use graph::{WikipediaGraph, IndexType};
     }
 }
 
 
-mod page;
+
 
 pub use page::{WikipediaPage, WikipediaUrlError};
 
 pub use url::Url;
 
 pub use isolang::Language;
+
