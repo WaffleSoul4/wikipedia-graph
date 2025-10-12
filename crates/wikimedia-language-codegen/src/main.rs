@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use codegen::{Scope, Variant};
 use serde_json::Value;
 
 const LANGUAGE_ENUM_NAME: &'static str = "WikiLanguages";
@@ -36,46 +37,49 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let enum_variants = languages
-        .iter()
-        .map(|language_data| {
-            let mut enum_variant = language_data.enum_variant();
-            enum_variant.push(',');
-            enum_variant.push('\n');
-            enum_variant
-        })
-        .collect::<String>();
+    // Enum
+    
+    let mut scope = Scope::new();
 
-    let enum_code = format!("pub enum {LANGUAGE_ENUM_NAME} {{\n{enum_variants}}}");
+    let language_enum = scope.new_enum(LANGUAGE_ENUM_NAME);
+
+    languages.iter().for_each(|language_data| {
+        language_enum.push_variant(Variant::new(language_data.enum_variant_unqualified()));
+    });
+
+    // Impl
+
+    let language_impl = scope.new_impl(LANGUAGE_ENUM_NAME);
+
+    // as_code
+
+    let as_code = language_impl.new_fn("as_code").arg_ref_self().vis("pub");
 
     let codes_arms = languages
         .iter()
         .map(LanguageData::code_match_arm)
+        .map(|string| format!("    {string}"))
         .collect::<String>();
 
-    let language_as_code = format!("pub fn as_code(&self) -> &str {{\n{codes_arms}}}");
+    let language_as_code = format!("match self {{\n{codes_arms}}}");
+
+    as_code
+        .line(language_as_code);
+
+    // as_name
+
+    let as_name = language_impl.new_fn("as_name").arg_ref_self().vis("pub");
 
     let names_arms = languages
         .iter()
-        .map(LanguageData::name_match_arm) // >:3
+        .map(LanguageData::name_match_arm)
+        .map(|string| format!("    {string}"))
         .collect::<String>();
 
-    let language_as_name = format!("pub fn as_name(&self) -> &str {{\n{names_arms}}}");
+    let language_as_name = format!("match self {{\n{names_arms}}}");
 
-    println!("{language_as_name}");
-
-    let code = format!(
-        "
-{enum_code}\n
-\n 
-impl {LANGUAGE_ENUM_NAME} {{\n
-{language_as_code}\n
-{language_as_name}
-}}
-        "
-    );
-
-    println!("{code}")
+    as_name
+        .line(language_as_name);
 }
 
 struct LanguageData {
@@ -94,6 +98,10 @@ impl LanguageData {
     }
 
     fn enum_variant(&self) -> String {
+        format!("{LANGUAGE_ENUM_NAME}::{}", self.enum_variant_unqualified())
+    }
+
+    fn enum_variant_unqualified(&self) -> String {
         capitalize(self.local_name.clone())
             .replace(" ", "")
             .replace("(", "")
@@ -101,19 +109,11 @@ impl LanguageData {
     }
 
     fn code_match_arm(&self) -> String {
-        format!(
-            "{} => \"{}\",\n",
-            self.enum_variant(),
-            self.code
-        )
+        format!("{} => \"{}\",\n", self.enum_variant(), self.code)
     }
 
     fn name_match_arm(&self) -> String {
-        format!(
-            "{} => \"{}\",\n",
-            self.enum_variant(),
-            self.name
-        )
+        format!("{} => \"{}\",\n", self.enum_variant(), self.name)
     }
 }
 
