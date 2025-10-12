@@ -10,52 +10,51 @@ mod petgraph_graph;
 mod egui_graph;
 
 /// The type used for indexing nodes on the graph
-/// 
+///
 ///  *This alias requires the `graphs` feature*
 pub type IndexType = usize;
 
 /// A trait that adds methods for manipulating and expanding wikipedia pages
-/// 
+///
 ///  *This trait requires the `graphs` feature*
 pub trait WikipediaGraph<IndexType: Clone> {
-
     /// Add a node to the graph
     ///
     ///  *This method requires the `graphs` feature*
     fn add_node(&mut self, page: WikipediaPage) -> IndexType;
 
     /// Add an edge to the graph
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn add_edge(&mut self, from: IndexType, to: IndexType);
 
     /// Get the weight of a node on the graph, or None if it doesn't exist
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_weight(&self, index: IndexType) -> Option<&WikipediaPage>;
 
     /// Get all of the node weights on the graph
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_weights(&self) -> Vec<&WikipediaPage>;
 
     /// Get all of the node indicies and their weights
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_indicies(&self) -> Vec<(&WikipediaPage, IndexType)>;
 
     /// Get the weight of a node on the graph mutably, or None if it doesn't exist
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_weight_mut(&mut self, index: IndexType) -> Option<&mut WikipediaPage>;
 
     /// Check if and edge exists
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn edge_exists(&self, lhs: IndexType, rhs: IndexType) -> bool;
 
     /// Get a list of all nodes with their weights and indicies cloned
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_indicies_owned(&self) -> Vec<(WikipediaPage, IndexType)> {
         self.node_indicies()
@@ -65,12 +64,12 @@ pub trait WikipediaGraph<IndexType: Clone> {
     }
 
     /// Place all linked pages as nodes on the graph and return only newly created nodes
-    /// 
+    ///
     /// *This method requires the `client` feature*
     /// *This method requires the `graphs` feature*
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails if the request for the wikipedia page fails
     #[cfg(feature = "client")]
     fn try_expand_node(
@@ -112,14 +111,12 @@ pub trait WikipediaGraph<IndexType: Clone> {
     }
 
     /// Check if a node exists with a specified value
-    /// 
+    ///
     ///  *This method requires the `graphs` feature*
     fn node_exists_with_value(&self, page: &WikipediaPage) -> Option<IndexType> {
         self.node_indicies()
             .iter()
-            .find(|(node_page, _)| {
-                page.pathinfo() == node_page.pathinfo()
-            })
+            .find(|(node_page, _)| page.pathinfo() == node_page.pathinfo())
             .map(|(_, index)| index.clone())
     }
 }

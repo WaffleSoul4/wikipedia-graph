@@ -32,8 +32,7 @@ impl WikipediaGraphAppBuilder {
             .user_agent(USER_AGENT)
             .expect("User agent is invalid");
 
-        let client =
-            WikipediaClient::from_config(config);
+        let client = WikipediaClient::from_config(config);
 
         let graph = StableDiGraph::default();
 

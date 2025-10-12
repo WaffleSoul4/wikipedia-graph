@@ -129,8 +129,9 @@ impl WikipediaGraphApp {
             let page = WikipediaPage::from_title(&node_editor.page_title);
             let index = if let Some(index) = <egui_graphs::Graph<WikipediaPage> as WikipediaGraph<
                 NodeIndex,
-            >>::node_exists_with_value(&self.graph, &page)
-            {
+            >>::node_exists_with_value(
+                &self.graph, &page
+            ) {
                 index
             } else {
                 let index = self.graph.add_node(page);
