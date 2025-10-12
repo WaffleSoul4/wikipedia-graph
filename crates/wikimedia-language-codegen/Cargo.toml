@@ -1,0 +1,11 @@
+[package]
+name = "wikimedia-language-codegen"
+description = "A tool to generate enums for the list of wikipedia languages, calling this codegen is a stretch"
+publish = false
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mediawiki = "0.3.1"
+serde_json = "1.0.145"
