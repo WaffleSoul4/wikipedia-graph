@@ -193,7 +193,7 @@ impl WikipediaClient {
         Err(HttpError::TooManyRedirects)
     }
 
-    /// Create a WikipediaClient from a WikipediaClientConfig
+    /// Create a [WikipediaClient] from a [WikipediaClientConfig]
     pub fn from_config(config: WikipediaClientConfig) -> Self {
         WikipediaClient {
             timeout: config.timeout,

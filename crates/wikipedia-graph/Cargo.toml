@@ -28,9 +28,10 @@ ehttp = { version = "0.5.0", optional = true }
 
 [features]
 default = ["petgraph", "client"]
-petgraph = ["dep:petgraph"]
+graphs = []
+petgraph = ["dep:petgraph", "graphs"]
 # Only the dependency, not the feature
-egui_graphs = ["dep:egui_graphs", "dep:petgraph"]
+egui_graphs = ["dep:egui_graphs", "dep:petgraph", "graphs"]
 client = [
     "dep:http", 
     "dep:ehttp",    

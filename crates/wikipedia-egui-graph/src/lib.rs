@@ -12,10 +12,7 @@ use egui_graphs::{
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::graph::NodeIndex;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 use web_time::{Duration, Instant};
 
 use wikipedia_graph::{HttpError, Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};

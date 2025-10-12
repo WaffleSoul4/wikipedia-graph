@@ -9,52 +9,76 @@ mod petgraph_graph;
 #[cfg(feature = "egui_graphs")]
 mod egui_graph;
 
-pub trait Indexable: Copy {
-    fn index(&self) -> usize;
-    fn from_index(index: usize) -> Self;
-}
+/// The type used for indexing nodes on the graph
+/// 
+///  *This alias requires the `graphs` feature*
+pub type IndexType = usize;
 
-#[cfg(any(feature = "petgraph", feature = "egui_graphs"))]
-impl<T: petgraph::graph::IndexType> Indexable for T {
-    fn index(&self) -> usize {
-        self.index()
-    }
+/// A trait that adds methods for manipulating and expanding wikipedia pages
+/// 
+///  *This trait requires the `graphs` feature*
+pub trait WikipediaGraph<IndexType: Clone> {
 
-    fn from_index(index: usize) -> Self {
-        Self::new(index)
-    }
-}
+    /// Add a node to the graph
+    ///
+    ///  *This method requires the `graphs` feature*
+    fn add_node(&mut self, page: WikipediaPage) -> IndexType;
 
-pub trait WikipediaGraph<NodeIndex: Copy + Indexable> {
-    fn add_node(&mut self, page: WikipediaPage) -> NodeIndex;
+    /// Add an edge to the graph
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn add_edge(&mut self, from: IndexType, to: IndexType);
 
-    fn add_edge(&mut self, from: NodeIndex, to: NodeIndex);
+    /// Get the weight of a node on the graph, or None if it doesn't exist
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn node_weight(&self, index: IndexType) -> Option<&WikipediaPage>;
 
-    fn node_weight(&self, index: NodeIndex) -> Option<&WikipediaPage>;
-
+    /// Get all of the node weights on the graph
+    /// 
+    ///  *This method requires the `graphs` feature*
     fn node_weights(&self) -> Vec<&WikipediaPage>;
 
-    fn node_indicies(&self) -> Vec<(&WikipediaPage, NodeIndex)>;
+    /// Get all of the node indicies and their weights
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn node_indicies(&self) -> Vec<(&WikipediaPage, IndexType)>;
 
-    fn node_weight_mut(&mut self, index: NodeIndex) -> Option<&mut WikipediaPage>;
+    /// Get the weight of a node on the graph mutably, or None if it doesn't exist
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn node_weight_mut(&mut self, index: IndexType) -> Option<&mut WikipediaPage>;
 
-    fn edge_exists(&self, lhs: NodeIndex, rhs: NodeIndex) -> bool;
+    /// Check if and edge exists
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn edge_exists(&self, lhs: IndexType, rhs: IndexType) -> bool;
 
-    fn node_indicies_owned(&self) -> Vec<(WikipediaPage, NodeIndex)> {
+    /// Get a list of all nodes with their weights and indicies cloned
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn node_indicies_owned(&self) -> Vec<(WikipediaPage, IndexType)> {
         self.node_indicies()
             .into_iter()
             .map(|(page, index)| (page.clone(), index))
             .collect()
     }
 
-    /// Place all linked pages as nodes on the graph. Returns a vector of only newly created nodes.
+    /// Place all linked pages as nodes on the graph and return only newly created nodes
+    /// 
+    /// *This method requires the `client` feature*
+    /// *This method requires the `graphs` feature*
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails if the request for the wikipedia page fails
     #[cfg(feature = "client")]
     fn try_expand_node(
         &mut self,
-        index: NodeIndex,
+        index: IndexType,
         client: &WikipediaClient,
-    ) -> Result<Option<Vec<NodeIndex>>, crate::client::HttpError> {
-        let page = self.node_weight_mut(index);
+    ) -> Result<Option<Vec<IndexType>>, crate::client::HttpError> {
+        let page = self.node_weight_mut(index.clone());
 
         let page = match page {
             Some(t) => t,
@@ -68,31 +92,34 @@ pub trait WikipediaGraph<NodeIndex: Copy + Indexable> {
 
         let node_indicies = linked_pages
             .into_iter()
-            .filter_map(|page| match self.node_exists(&page) {
+            .filter_map(|page| match self.node_exists_with_value(&page) {
                 Some(existing_index) => {
-                    if !self.edge_exists(index, existing_index) {
-                        self.add_edge(index, existing_index);
+                    if !self.edge_exists(index.clone(), existing_index.clone()) {
+                        self.add_edge(index.clone(), existing_index);
                     }
 
                     None
                 }
                 None => Some(self.add_node(page)),
             })
-            .collect::<Vec<NodeIndex>>();
+            .collect::<Vec<IndexType>>();
 
         node_indicies.iter().for_each(|node_index| {
-            self.add_edge(index, node_index.clone());
+            self.add_edge(index.clone(), node_index.clone());
         });
 
         Ok(Some(node_indicies))
     }
 
-    fn node_exists(&self, page: &WikipediaPage) -> Option<NodeIndex> {
+    /// Check if a node exists with a specified value
+    /// 
+    ///  *This method requires the `graphs` feature*
+    fn node_exists_with_value(&self, page: &WikipediaPage) -> Option<IndexType> {
         self.node_indicies()
             .iter()
             .find(|(node_page, _)| {
-                page.pathinfo() == node_page.pathinfo() || page.pathinfo() == node_page.pathinfo()
+                page.pathinfo() == node_page.pathinfo()
             })
-            .map(|(_, index)| *index)
+            .map(|(_, index)| index.clone())
     }
 }

@@ -7,6 +7,7 @@ use url::Url;
 #[cfg(feature = "client")]
 use crate::client::{HttpError, WikipediaClient};
 
+/// A struct representing the location of a Wikipedia page and its body
 #[derive(Clone, Debug)]
 pub struct WikipediaPage {
     // This is called 'pathinfo' it's the part of the url after the /
@@ -14,14 +15,17 @@ pub struct WikipediaPage {
     page_text: Option<String>,
 }
 
+/// An error that may occur when a language has no iso 639-1 representation
 #[derive(Error, Debug)]
-#[error("Language has no valid iso 639-1 specification")]
+#[error("Language has no valid iso 639-1 representation")]
 pub struct LanguageInvalidError;
 
+/// An error that may occur when the pathinfo of a page cannot be seperated from its body
 #[derive(Debug, Error)]
 #[error("Failed to parse pathinfo from body")]
 pub struct PathinfoParseError;
 
+/// An error that may occur when parsing directly from a wikipedia URL
 #[derive(Debug, Error)]
 pub enum WikipediaUrlError {
     #[error("URL host is not the wikipedia domain")]
@@ -72,8 +76,13 @@ fn verify_url(url: &Url) -> Result<(), WikipediaUrlError> {
 
 impl WikipediaPage {
     /// A list of page titles that won't be included in linked pages
-    const FILTERED_PAGES: [&str; 1] = ["Wayback Machine"];
+    const FILTERED_PAGES: [&str; 1] = [
+        "Wayback Machine", // Almost all sources are linked to through the wayback machine
+    ];
 
+    /// Manually set the page text of a wikipedia page
+    ///
+    /// This is helpful for loading pages from places other than wikipedia.org
     pub fn set_page_text(&mut self, data: String) -> &mut Self {
         let pathinfo_new = Self::get_pathinfo_from_page_text(&data);
 
@@ -87,10 +96,14 @@ impl WikipediaPage {
         self
     }
 
+    /// Check if the page text is loaded
     pub fn is_page_text_loaded(&self) -> bool {
         self.page_text.is_some()
     }
 
+    /// Create a special random Wikipedia page
+    ///
+    /// This requires a client to get the page and then update the pathinfo accordingly
     pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
         let mut page = WikipediaPage::from_title("Special:Random");
 
@@ -105,10 +118,12 @@ impl WikipediaPage {
         Ok(page)
     }
 
+    /// Get the pathinfo of the wikipedia page
     pub fn pathinfo(&self) -> &String {
         &self.pathinfo
     }
 
+    /// Get the url of the wikipedia page with a certain language
     pub fn url_with_lang(&self, language: Language) -> Result<Url, LanguageInvalidError> {
         let base = crate::page::wikipedia_base_with_language(language)?;
         match base.join(&self.pathinfo) {
@@ -121,6 +136,9 @@ impl WikipediaPage {
         }
     }
 
+    /// Create a new WikipediaPage from the title
+    ///
+    /// For example: `Waffle` to the the Waffle page
     pub fn from_title(title: impl Into<String>) -> Self {
         let title: String = title.into();
 
@@ -130,6 +148,9 @@ impl WikipediaPage {
         }
     }
 
+    /// Try to create a new WikipediaPage from a path
+    ///
+    /// For example: `/wiki/Waffle/` to get the Waffle page
     pub fn try_from_path(path: impl Into<String>) -> Result<Self, WikipediaUrlError> {
         let base = Url::parse("https://wikipedia.org/wiki/")
             .expect("Url 'https://wikipedia.org/wiki/' is invalid");
@@ -146,6 +167,9 @@ impl WikipediaPage {
         Ok(Self::from_title(title))
     }
 
+    /// Try to create a new WikipediaPage from a URL
+    ///
+    /// For example: `https://wikipedia.org/wiki/Waffle` to get the Waffle page
     pub fn try_from_url(url: Url) -> Result<Self, WikipediaUrlError> {
         verify_url(&url)?;
 
@@ -162,7 +186,7 @@ impl WikipediaPage {
             })
     }
 
-    pub fn update_pathinfo_with_page_text(
+    fn update_pathinfo_with_page_text(
         &mut self,
         page_text: &String,
     ) -> Result<&mut Self, PathinfoParseError> {
@@ -174,6 +198,14 @@ impl WikipediaPage {
     cfg_if::cfg_if! {
         if #[cfg(feature = "client")] {
             // Does not load the body into memory
+
+            /// Get the text of the page without loading into memory, or retrieve it from memory
+            ///
+            /// *This method requires the `client` feature*
+            ///
+            /// # Errors
+            ///
+            /// This method fails if the request for the page data fails
             pub fn get_page_text(&self, client: &WikipediaClient) -> Result<String, HttpError> {
                 match &self.page_text {
                     Some(t) => Ok(t.clone()),
@@ -182,6 +214,14 @@ impl WikipediaPage {
             }
 
             // Load the page text from the internet no matter what
+
+            /// Load the page text and store it in memory
+            ///
+            /// *This method requires the `client` feature*
+            ///
+            /// # Errors
+            ///
+            /// This method fails if the request for the page data fails
             pub fn force_load_page_text(
                 &mut self,
                 client: &WikipediaClient,
@@ -200,6 +240,13 @@ impl WikipediaPage {
                 Ok(self)
             }
 
+            /// Load the page text if it is not already stored in memory
+            ///
+            /// *This method requires the `client` feature*
+            ///
+            /// # Errors
+            ///
+            /// This method fails if the request for the page data fails
             pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
                 let text = self.get_page_text(client)?;
 
@@ -207,20 +254,24 @@ impl WikipediaPage {
 
                 Ok(self)
             }
-
-            pub fn unload_body(&mut self) -> &mut Self {
-                self.page_text = None;
-
-                self
-            }
         }
     }
 
+    /// Remove any page text from memory
+    pub fn unload_body(&mut self) -> &mut Self {
+        self.page_text = None;
+
+        self
+    }
+
     // All the 'try_...' functions mean is that they don't make any requests
+
+    /// Get the page text if it it loaded
     pub fn try_get_page_text(&self) -> Option<String> {
         self.page_text.clone()
     }
 
+    /// Give a best guess at the title of the page
     pub fn title(&self) -> String {
         capitalize(url_encor::decode(self.pathinfo.replace("_", " ").as_str()))
     }
@@ -269,6 +320,7 @@ impl WikipediaPage {
             .to_string())
     }
 
+    /// Get all the pages that this page links to if the page text is loaded
     pub fn try_get_linked_pages(&self) -> Option<Vec<WikipediaPage>> {
         if let Some(text) = &self.page_text {
             return Some(WikipediaPage::get_linked_pages_from_page_text(text));
