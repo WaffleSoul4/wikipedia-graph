@@ -2,7 +2,7 @@ use super::WikipediaClientConfig;
 use crate::client::WikipediaClientCommon;
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
-use isolang::Language;
+use crate::WikiLanguage;
 use std::fmt::Display;
 use thiserror::Error;
 use url::Url;
@@ -37,7 +37,7 @@ pub enum HttpError {
 /// A client used for getting Wikipedia pages
 pub struct WikipediaClient {
     timeout: Option<Duration>,
-    language: Language,
+    language: WikiLanguage,
     headers: http::HeaderMap,
 }
 
@@ -204,7 +204,7 @@ impl WikipediaClient {
 }
 
 impl WikipediaClientCommon for WikipediaClient {
-    fn language(&self) -> isolang::Language {
+    fn language(&self) -> WikiLanguage {
         self.language
     }
 }

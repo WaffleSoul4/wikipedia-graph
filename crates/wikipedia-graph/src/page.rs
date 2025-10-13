@@ -1,4 +1,4 @@
-use isolang::Language;
+use crate::wikimedia_languages::WikiLanguage;
 use itertools::Itertools;
 use regex::Regex;
 use thiserror::Error;
@@ -38,13 +38,11 @@ pub enum WikipediaUrlError {
 }
 
 // Some langs don't have an iso 639-1
-pub fn wikipedia_base_with_language(
-    language: isolang::Language,
-) -> Result<Url, LanguageInvalidError> {
+pub fn wikipedia_base_with_language(language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
     Ok(Url::parse(
         format!(
             "https://{}.wikipedia.org/wiki/",
-            language.to_639_1().ok_or(LanguageInvalidError)?
+            language.as_code_wiki().ok_or(LanguageInvalidError)?
         )
         .as_str(),
     )
@@ -124,7 +122,7 @@ impl WikipediaPage {
     }
 
     /// Get the url of the wikipedia page with a certain language
-    pub fn url_with_lang(&self, language: Language) -> Result<Url, LanguageInvalidError> {
+    pub fn url_with_lang(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
         let base = crate::page::wikipedia_base_with_language(language)?;
         match base.join(&self.pathinfo) {
             Ok(t) => Ok(t),

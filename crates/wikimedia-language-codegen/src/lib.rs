@@ -169,7 +169,7 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
 
     let from_code = language_impl
         .new_fn("from_code")
-        .arg("code", "&'static str")
+        .arg("code", "&str")
         .vis("pub")
         .ret("Option<Self>");
 

@@ -6,23 +6,23 @@ use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::prelude::StableDiGraph;
-use wikipedia_graph::{Language, WikipediaClient, WikipediaClientConfig, WikipediaPage};
+use wikipedia_graph::{WikiLanguage, WikipediaClient, WikipediaClientConfig, WikipediaPage};
 
 // Don't worry, I might add more
 pub struct WikipediaGraphAppBuilder {
-    language: Language,
+    language: WikiLanguage,
 }
 
 impl Default for WikipediaGraphAppBuilder {
     fn default() -> Self {
         WikipediaGraphAppBuilder {
-            language: Language::from_639_1("en").expect("en is not a valid iso"),
+            language: WikiLanguage::from_code("en").expect("en is not a valid iso"),
         }
     }
 }
 
 impl WikipediaGraphAppBuilder {
-    pub fn with_language(self, language: Language) -> Self {
+    pub fn with_language(self, language: WikiLanguage) -> Self {
         Self { language, ..self }
     }
 

@@ -24,6 +24,7 @@
 //! ```
 
 mod page;
+mod wikimedia_languages;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "client")] {
@@ -49,4 +50,4 @@ pub use page::{WikipediaPage, WikipediaUrlError};
 
 pub use url::Url;
 
-pub use isolang::Language;
+pub use wikimedia_languages::WikiLanguage;

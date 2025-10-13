@@ -15,7 +15,7 @@ use petgraph::graph::NodeIndex;
 use std::{cell::RefCell, rc::Rc};
 use web_time::{Duration, Instant};
 
-use wikipedia_graph::{HttpError, Language, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
+use wikipedia_graph::{HttpError, WikiLanguage, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
 
 use crate::builder::WikipediaGraphAppBuilder;
 
@@ -39,7 +39,7 @@ pub struct WikipediaGraphApp {
     pub style_settings: StyleSettings,
     pub initialization: u8,
     pub internet_status: InternetStatus,
-    pub language: Language,
+    pub language: WikiLanguage,
 }
 
 pub struct FrameCounter {
@@ -250,7 +250,7 @@ impl Default for InternetStatus {
 const USER_AGENT: &str = "wikipedia-egui-graph/0.1.1";
 
 impl WikipediaGraphApp {
-    pub fn with_language(self, language: Language) -> Self {
+    pub fn with_language(self, language: WikiLanguage) -> Self {
         Self { language, ..self }
     }
 

@@ -1,6 +1,7 @@
 mod client;
 pub use client::*;
 
+use crate::wikimedia_languages::WikiLanguage;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use std::{str::FromStr, time::Duration};
 use thiserror::Error;
@@ -16,7 +17,7 @@ pub struct WikipediaClientConfig {
     timeout: Option<Duration>,
     // Only non-default headers
     headers: HeaderMap<HeaderValue>,
-    language: isolang::Language,
+    language: WikiLanguage,
 }
 
 /// The default user agent
@@ -60,10 +61,10 @@ impl WikipediaClientConfig {
 
     /// Sets the language of the request
     ///
-    /// For example, the 'Waffle' page becomes into the URL 'https://{lang's iso 639-1}.wikipedia.org/wiki/Waffle'
+    /// For example, the 'Waffle' page becomes into the URL 'https://{wikipedia language code}.wikipedia.org/wiki/Waffle'
     ///
     /// The default value is temporarily English
-    pub fn language(self, language: isolang::Language) -> Self {
+    pub fn language(self, language: WikiLanguage) -> Self {
         Self { language, ..self }
     }
 
@@ -98,7 +99,7 @@ impl Default for WikipediaClientConfig {
         );
 
         WikipediaClientConfig {
-            language: isolang::Language::from_639_1("en").expect("Language 'en' does not exist"),
+            language: WikiLanguage::from_code("en").expect("Language 'en' does not exist"),
             timeout: Some(Duration::from_secs(5)),
             headers,
         }
@@ -111,7 +112,7 @@ impl Default for WikipediaClientConfig {
 ///
 /// This is currently useless, since there is only one client
 trait WikipediaClientCommon {
-    fn language(&self) -> isolang::Language;
+    fn language(&self) -> WikiLanguage;
 
     fn base_url(&self) -> Result<Url, crate::page::LanguageInvalidError> {
         crate::page::wikipedia_base_with_language(self.language())
@@ -138,7 +139,7 @@ trait WikipediaClientCommon {
 #[cfg(test)]
 mod test {
     mod language {
-        use isolang::Language;
+        use crate::WikiLanguage;
 
         use crate::page::wikipedia_base_with_language;
 
@@ -167,16 +168,15 @@ mod test {
 
         #[test]
         fn languages_are_valid() {
-            for (iso, name) in TEST_LANGUAGES {
+            for (code, name) in TEST_LANGUAGES {
                 let url = wikipedia_base_with_language(
-                    Language::from_639_1(iso)
-                        .expect(format!("Iso code '{iso}' is invalid").as_str()),
+                    WikiLanguage::from_code(code).expect(format!("Wikipedia code '{code}' is invalid").as_str()),
                 )
-                .expect(format!("Language '{name}' has no iso 639-1 code").as_str());
+                .expect(format!("Language '{name}' has no wikipedia code").as_str());
                 if !url.host_str().map_or(false, |host| {
-                    host.starts_with(iso) && host.ends_with("wikipedia.org")
+                    host.starts_with(code) && host.ends_with("wikipedia.org")
                 }) {
-                    panic!("Url does not start with the respective iso code")
+                    panic!("Url does not start with the correct wikipedia language code")
                 }
             }
         }

@@ -1,6 +1,6 @@
 use eframe::{NativeOptions, run_native};
 use wikipedia_egui_graph::{WikipediaGraphApp, builder::WikipediaGraphAppBuilder};
-use wikipedia_graph::Language;
+use wikipedia_graph::WikiLanguage;
 
 fn main() {
     pretty_env_logger::init();
@@ -16,7 +16,7 @@ fn main() {
             let mut app_builder = WikipediaGraphAppBuilder::default();
 
             if let Some(lang) = args.next() {
-                if let Some(language) = Language::from_639_1(lang.as_str()) {
+                if let Some(language) = WikiLanguage::from_code(lang.as_str()) {
                     app_builder = app_builder.with_language(language)
                 } else {
                     log::warn!("Language entered is invalid")
