@@ -7,7 +7,7 @@ use codegen::{Scope, Variant};
 use regex::Regex;
 use serde_json::Value;
 
-const LANGUAGE_ENUM_NAME: &'static str = "WikiLanguages";
+const LANGUAGE_ENUM_NAME: &'static str = "WikiLanguage";
 
 #[derive(PartialEq, Eq, Hash)]
 pub enum WikimediaCode {
@@ -26,6 +26,7 @@ impl WikimediaCode {
         match str {
             "wiki" => Some(Self::Wikipedia),
             "wiktionary" => Some(Self::Wiktionary),
+            "wikibooks" => Some(Self::Wiktionary),
             "wikinews" => Some(Self::Wikinews),
             "wikiquote" => Some(Self::Wikiquote),
             "wikisource" => Some(Self::Wikisource),
@@ -129,7 +130,10 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
     // Enum
     let mut scope = Scope::new();
 
-    let language_enum = scope.new_enum(LANGUAGE_ENUM_NAME).vis("pub");
+    let language_enum = scope
+        .new_enum(LANGUAGE_ENUM_NAME)
+        .vis("pub")
+        .derive("Debug");
 
     languages.iter().for_each(|language_data| {
         language_enum.push_variant(Variant::new(language_data.enum_variant_unqualified()));
@@ -158,6 +162,24 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
 
         as_code.line(language_as_code);
     });
+
+    // from_code
+
+    let from_code = language_impl
+        .new_fn("from_code")
+        .arg_ref_self()
+        .vis("pub")
+        .ret("Option<Self>");
+
+    let codes_arms = languages
+        .iter()
+        .filter_map(|language| language.option_code_match_arm_reversed())
+        .map(|string| format!("    {string}"))
+        .collect::<String>();
+
+    let language_from_code = format!("match self {{\n{codes_arms}    _ => None,\n}}");
+
+    from_code.line(language_from_code);
 
     // as_name
 
@@ -207,11 +229,35 @@ impl LanguageData {
     }
 
     fn code_match_arm(&self, wikimedia_code: &WikimediaCode) -> Option<String> {
-        Some(format!("{} => \"{}\",\n", self.enum_variant(), self.codes.get(&wikimedia_code)?))
+        Some(format!(
+            "{} => \"{}\",\n",
+            self.enum_variant(),
+            self.codes.get(&wikimedia_code)?
+        ))
     }
 
     fn option_code_match_arm(&self, wikimedia_code: &WikimediaCode) -> Option<String> {
-        Some(format!("{} => Some(\"{}\"),\n", self.enum_variant(), self.codes.get(&wikimedia_code)?))
+        Some(format!(
+            "{} => Some(\"{}\"),\n",
+            self.enum_variant(),
+            self.codes.get(&wikimedia_code)?
+        ))
+    }
+
+    fn code_match_arm_reversed(&self) -> Option<String> {
+        Some(format!(
+            "\"{}\" => {},\n",
+            self.universal_code,
+            self.enum_variant()
+        ))
+    }
+
+    fn option_code_match_arm_reversed(&self) -> Option<String> {
+        Some(format!(
+            "\"{}\" => Some({}),\n",
+            self.universal_code,
+            self.enum_variant()
+        ))
     }
 
     fn name_match_arm(&self) -> String {
