@@ -3,17 +3,20 @@ members = ["crates/wikimedia-language-codegen","crates/wikipedia-egui-graph","cr
 resolver = "3"
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT OR Unlicense"
 
 [workspace.dependencies]
-thiserror = "2.0.16"
-petgraph = { version = "0.8.2", default-features = false, features = ["std", "stable_graph"]}
-egui_graphs = { version = "0.28.0" }
-eframe = "0.32.3"
-egui = "0.32.3"
-log = "0.4.28"
+thiserror = "2.0"
+petgraph = { version = "0.8", default-features = false, features = ["std", "stable_graph"]}
+log = "0.4"
+
+# ui
+# I might make a pr to push the version of this so I can use up-to date eframe and egui
+egui_graphs = { version = "0.28" }
+eframe = "0.32"
+egui = "0.32"
 
 [workspace.lints.rust]
 unsafe_code = "warn"
