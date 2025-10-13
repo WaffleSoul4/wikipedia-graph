@@ -133,7 +133,9 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
     let language_enum = scope
         .new_enum(LANGUAGE_ENUM_NAME)
         .vis("pub")
-        .derive("Debug");
+        .derive("Debug")
+        .derive("Clone")
+        .derive("Copy");
 
     languages.iter().for_each(|language_data| {
         language_enum.push_variant(Variant::new(language_data.enum_variant_unqualified()));
@@ -167,7 +169,7 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
 
     let from_code = language_impl
         .new_fn("from_code")
-        .arg_ref_self()
+        .arg("code", "&'static str")
         .vis("pub")
         .ret("Option<Self>");
 
@@ -177,7 +179,7 @@ pub fn languages_as_enum_code(languages: Vec<LanguageData>) -> Scope {
         .map(|string| format!("    {string}"))
         .collect::<String>();
 
-    let language_from_code = format!("match self {{\n{codes_arms}    _ => None,\n}}");
+    let language_from_code = format!("match code {{\n{codes_arms}    _ => None,\n}}");
 
     from_code.line(language_from_code);
 
