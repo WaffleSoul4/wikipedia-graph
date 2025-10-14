@@ -1,9 +1,10 @@
 mod client;
 pub use client::*;
+use itertools::Itertools;
 
 use crate::wikimedia_languages::WikiLanguage;
 use http::{HeaderMap, HeaderName, HeaderValue};
-use std::{str::FromStr, time::Duration};
+use std::{collections::HashMap, str::FromStr, time::Duration};
 use thiserror::Error;
 use url::Url;
 
@@ -39,8 +40,20 @@ pub enum HeaderError {
 }
 
 impl WikipediaClientConfig {
-    pub fn new() -> Self {
-        Self::default()
+
+    /// Create a new instance of [WikipediaClientConfig] with set values
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails whenever invalid headers are provided
+    pub fn new(timeout: Option<Duration>, headers: HashMap<&str, &str>, language: WikiLanguage) -> Result<Self, HeaderError> {
+        let without_headers = Self::default().timeout(timeout).language(language);
+
+        headers
+            .iter()
+            .try_fold(without_headers, |without_headers, (name, value)| {
+                without_headers.add_header(name, value)
+            })
     }
 
     /// Sets the user agent of the client
