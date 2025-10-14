@@ -39,13 +39,16 @@ pub enum HeaderError {
 }
 
 impl WikipediaClientConfig {
-
     /// Create a new instance of [WikipediaClientConfig] with set values
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails whenever invalid headers are provided
-    pub fn new(timeout: Option<Duration>, headers: HashMap<&str, &str>, language: WikiLanguage) -> Result<Self, HeaderError> {
+    pub fn new(
+        timeout: Option<Duration>,
+        headers: HashMap<&str, &str>,
+        language: WikiLanguage,
+    ) -> Result<Self, HeaderError> {
         let without_headers = Self::default().timeout(timeout).language(language);
 
         headers
@@ -182,7 +185,8 @@ mod test {
         fn languages_are_valid() {
             for (code, name) in TEST_LANGUAGES {
                 let url = wikipedia_base_with_language(
-                    WikiLanguage::from_code(code).expect(format!("Wikipedia code '{code}' is invalid").as_str()),
+                    WikiLanguage::from_code(code)
+                        .expect(format!("Wikipedia code '{code}' is invalid").as_str()),
                 )
                 .expect(format!("Language '{name}' has no wikipedia code").as_str());
                 if !url.host_str().map_or(false, |host| {

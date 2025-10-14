@@ -249,10 +249,13 @@ impl WikipediaGraphApp {
         graph
             .edges_directed(index, direction)
             .map(|edge_reference| edge_reference.id())
-            .flat_map(|edge_index| {
+            .flat_map(move |edge_index| {
                 let connected_node = graph
                     .edge_endpoints(edge_index)
-                    .map(|(_source, target)| target);
+                    .map(|(source, target)| match direction {
+                        petgraph::Direction::Outgoing => target,
+                        petgraph::Direction::Incoming => source,
+                    });
 
                 if connected_node.is_none() {
                     error!("Failed to locate a connected edge of the selected node");

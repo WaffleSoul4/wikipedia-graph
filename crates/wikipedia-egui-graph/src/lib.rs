@@ -15,7 +15,9 @@ use petgraph::graph::NodeIndex;
 use std::{cell::RefCell, rc::Rc};
 use web_time::{Duration, Instant};
 
-use wikipedia_graph::{HttpError, WikiLanguage, Url, WikipediaClient, WikipediaGraph, WikipediaPage};
+use wikipedia_graph::{
+    HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
+};
 
 use crate::builder::WikipediaGraphAppBuilder;
 

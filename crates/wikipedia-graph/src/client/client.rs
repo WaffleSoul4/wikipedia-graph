@@ -1,8 +1,8 @@
 use super::WikipediaClientConfig;
+use crate::WikiLanguage;
 use crate::client::WikipediaClientCommon;
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
-use crate::WikiLanguage;
 use std::fmt::Display;
 use thiserror::Error;
 use url::Url;

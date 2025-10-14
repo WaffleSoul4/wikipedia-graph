@@ -32,7 +32,7 @@ pub enum WikipediaUrlError {
     #[error("URL host is not the wikipedia domain")]
     InvalidHost,
     /// The path of the URL does not lead to a wiki
-    /// 
+    ///
     /// For example: 'wikipedia.org/wiki/Waffle vs. wikipedia.org/Waffle (I don't know if this actually happens)
     #[error("URL path does not lead to a wiki")]
     InvalidPath,
