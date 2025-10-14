@@ -28,11 +28,16 @@ pub struct PathinfoParseError;
 /// An error that may occur when parsing directly from a wikipedia URL
 #[derive(Debug, Error)]
 pub enum WikipediaUrlError {
+    /// The host of the URL does not lead to wikipedia.org
     #[error("URL host is not the wikipedia domain")]
     InvalidHost,
-    // For example: https://en.wikipedia.org/wiki/Waffle vs. https://en.wikipedia.org/Waffle (Haven't actually been able to find a page like this yet)
+    /// The path of the URL does not lead to a wiki
+    /// 
+    /// For example: 'wikipedia.org/wiki/Waffle vs. wikipedia.org/Waffle (I don't know if this actually happens)
     #[error("URL path does not lead to a wiki")]
     InvalidPath,
+
+    /// The Url cannot be parsed for an unknown reason
     #[error("Invalid URL: '{0}'")]
     InvalidURL(#[from] url::ParseError),
 }

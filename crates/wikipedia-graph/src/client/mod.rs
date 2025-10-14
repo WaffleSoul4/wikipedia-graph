@@ -1,6 +1,5 @@
 mod client;
 pub use client::*;
-use itertools::Itertools;
 
 use crate::wikimedia_languages::WikiLanguage;
 use http::{HeaderMap, HeaderName, HeaderValue};

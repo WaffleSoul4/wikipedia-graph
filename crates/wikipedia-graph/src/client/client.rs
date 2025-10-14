@@ -11,25 +11,32 @@ use web_time::Duration;
 /// The Errors that may occur with the HTTP client
 #[derive(Debug, Error)]
 pub enum HttpError {
+    /// An unknown error with the backend (ehttp)
     #[error("Error with HTTP backend: {0}")]
     Backend(String),
+    /// The provided URL couldn't be parsed
     #[error("Error parsing URL: {0}")]
     UrlParseError(#[from] url::ParseError),
-    #[error("URL was malformed: '{0}'")]
-    BadUri(String),
+    /// The requested page could not be found
     #[error("Page not found at URL")]
     PageNotFound,
+    /// The request timed out
     #[error("Failed to get page before timeout")]
     Timeout,
+    /// The returned page has no body
     #[error("Failed to find page body")]
     NoPageBody,
+    /// The amount of redirects exceeded [crate::client::CLIENT_REDIRECTS]
     #[error("Too many redirects")]
     TooManyRedirects,
+    /// Inner error type for redirecting, not really an error
     #[doc(hidden)]
     #[error("This is solely an inner type used for detecting redirects")]
     Redirect(String),
+    /// The request returned an unknown response code
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
+    /// The client failed to get the information from the request thread
     #[error("Failed to sync data containing response")]
     SyncError,
 }
