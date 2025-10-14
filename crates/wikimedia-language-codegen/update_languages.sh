@@ -3,14 +3,14 @@
 current_path=$(basename "$PWD")
 
 case "$current_path" in 
-  "wikimedia-language-codegen")
+  "wikipedia-graph")
     echo "> Directory confirmed"
     ;;
   *)
-    echo "Run this script in the 'wikimedia-language-codegen' directory"
+    echo "Run this script in the workspace root"
     exit 1
 esac
 
-cargo run
+cargo run --bin wikimedia-language-codegen
 
-cp "./output/wikimedia_languages.rs" "../wikipedia-graph/src"
+cp "./crates/wikimedia-language-codegen/output/wikimedia_languages.rs" "./crates/wikipedia-graph/src/generated"

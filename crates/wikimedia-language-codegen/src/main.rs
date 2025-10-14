@@ -14,8 +14,8 @@ fn main() {
         code.to_string()
     );
 
-    let mut file = File::create(Path::new("output/wikimedia_languages.rs"))
-        .expect("Failed to open output file");
+    let mut file = File::create(Path::new("crates/wikimedia-language-codegen/output/wikimedia_languages.rs"))
+        .expect("Failed to create output file");
 
     std::io::Write::write_all(&mut file, code_string.as_bytes())
         .expect("Failed to write code to file");

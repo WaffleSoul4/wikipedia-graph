@@ -24,7 +24,9 @@
 //! ```
 
 mod page;
-mod wikimedia_languages;
+mod wikimedia_languages {
+    include!("generated/wikimedia_languages.rs");
+}
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "client")] {
