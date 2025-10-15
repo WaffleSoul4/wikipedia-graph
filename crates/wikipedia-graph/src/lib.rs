@@ -15,7 +15,7 @@
 //! # fn main() -> Result<(), HttpError> {
 //! let mut page = WikipediaPage::from_title("Waffle");
 //! let client = WikipediaClient::default();
-//! 
+//!
 //! page.load_page_text(&client);
 //!
 //! println!("Page title: {}", page.title());
