@@ -1,7 +1,8 @@
 mod common;
 mod graphs;
 use url::Url;
-use wikipedia_graph::WikipediaPage;
+use wikipedia_graph::{WikiLanguage, WikipediaPage};
+
 #[test]
 fn page_creation() {
     let url = Url::parse("https://wikipedia.org/wiki/Waffle").unwrap();
@@ -25,7 +26,7 @@ fn linked_pages() {
     linked_pages
         .into_iter()
         .zip(multekrem_linked_pages)
-        .for_each(|(linked, known_linked)| assert_eq!(linked.pathinfo(), known_linked.pathinfo()));
+        .for_each(|(linked, known_linked)| assert_eq!(linked.pathinfo(), known_linked.pathinfo())); // Better error message than itertools::eq
 }
 
 #[test]
@@ -33,4 +34,27 @@ fn get_title() {
     let page = common::multekrem_page();
 
     assert_eq!(page.title().as_str(), "Multekrem")
+}
+
+#[test]
+fn get_url() {
+    let page = common::multekrem_page();
+
+    assert_eq!(
+        page.url_with_lang(WikiLanguage::from_code("en").expect("Language code 'en' is invalid"))
+            .expect("Multekrem URL is invalid")
+            .as_str(),
+        "https://en.wikipedia.org/wiki/Multekrem"
+    );
+}
+
+#[test]
+fn page_is_loaded() {
+    let mut page = common::multekrem_page();
+
+    assert!(page.is_page_text_loaded());
+
+    page.unload_body();
+
+    assert!(!page.is_page_text_loaded());
 }

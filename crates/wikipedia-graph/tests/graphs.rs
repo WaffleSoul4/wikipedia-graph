@@ -59,11 +59,9 @@ mod petgraph {
         assert_eq!(graph_1.edge_count(), NUM_LINKED_MULTEKREM_PAGES);
         assert_eq!(graph_2.edge_count(), NUM_LINKED_MULTEKREM_PAGES);
 
-        assert!(
-            graph_1
-                .node_weights()
-                .map(|weight| weight.pathinfo())
-                .eq(graph_2.node_weights().map(|wieght| wieght.pathinfo()))
-        )
+        graph_1
+            .node_weights()
+            .zip(graph_2.node_weights())
+            .for_each(|(weight_1, weight_2)| assert_eq!(weight_1.pathinfo(), weight_2.pathinfo()));
     }
 }

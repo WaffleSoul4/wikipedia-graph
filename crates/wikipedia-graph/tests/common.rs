@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use std::io::Read;
 use url::Url;
 use wikipedia_graph::{WikipediaClient, WikipediaPage};
