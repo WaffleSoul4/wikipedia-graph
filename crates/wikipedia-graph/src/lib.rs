@@ -11,15 +11,19 @@
 //!
 //! # Example
 //! ```no_run
-//! # fn main() -> Result<(), wikipedia-graph::HttpError>
+//! # use wikipedia_graph::{HttpError, WikipediaPage, WikipediaClient};
+//! # fn main() -> Result<(), HttpError> {
 //! let mut page = WikipediaPage::from_title("Waffle");
-//! page.load_page_text();
+//! let client = WikipediaClient::default();
+//! 
+//! page.load_page_text(&client);
 //!
 //! println!("Page title: {}", page.title());
 //!
 //! for page in page.try_get_linked_pages().unwrap() {
 //!     println!("Connects to {}", page.title());
 //! }
+//! # Ok(())
 //! # }
 //! ```
 
