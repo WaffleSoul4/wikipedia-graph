@@ -25,6 +25,7 @@
 
 mod page;
 mod wikimedia_languages {
+    #![allow(missing_docs)]
     include!("generated/wikimedia_languages.rs");
 }
 
