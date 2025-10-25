@@ -1,4 +1,9 @@
-use egui::{DragValue, RichText, ScrollArea, Slider, TextEdit, Ui};
+use std::alloc::Layout;
+
+use egui::{
+    Color32, Context, DragValue, Frame, Pos2, RichText, ScrollArea, Sense, Slider, TextEdit, Ui,
+    UiBuilder,
+};
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::Metadata;
 use log::{error, warn};
@@ -9,6 +14,40 @@ use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
 use crate::{InternetStatus, WikipediaGraphApp};
 
 impl WikipediaGraphApp {
+    pub fn search_bar(&mut self, ctx: &Context) {
+        egui::Window::new("Node Search").show(ctx, |ui| {
+            ui.add(
+                TextEdit::singleline(&mut self.search_data.query).hint_text("Search added nodes"),
+            );
+
+            if !self.search_data.query.is_empty() {
+                let indices = self.graph.node_indicies();
+
+                let pages = self.search_data.search_n_pages(indices, 10);
+
+                for (name, index) in pages {
+                    ui.scope(|ui| {
+                        let visuals = ui.visuals();
+
+                        let fill = if !ui.rect_contains_pointer(ui.max_rect()) {
+                            Color32::TRANSPARENT
+                        } else {
+                            visuals.code_bg_color
+                        };
+
+                        Frame::NONE.corner_radius(3.).inner_margin(2.).outer_margin(2.).fill(fill).show(ui, |ui| {
+                            let label = ui.label(name);
+
+                            if label.clicked() {
+                                self.selected_node = Some(index)
+                            }
+                        });
+                    });
+                }
+            };
+        });
+    }
+
     pub fn keybinds(&mut self, ui: &mut Ui) {
         self.control_settings.movement.x = match (
             ui.input(|input| input.key_pressed(Key::A)),

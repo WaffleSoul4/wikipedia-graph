@@ -16,7 +16,7 @@ use std::{cell::RefCell, rc::Rc};
 use web_time::{Duration, Instant};
 
 use wikipedia_graph::{
-    HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
+    HttpError, IndexType, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
 };
 
 use crate::builder::WikipediaGraphAppBuilder;
@@ -42,6 +42,7 @@ pub struct WikipediaGraphApp {
     pub initialization: u8,
     pub internet_status: InternetStatus,
     pub language: WikiLanguage,
+    pub search_data: SearchData,
 }
 
 pub struct FrameCounter {
@@ -249,6 +250,52 @@ impl Default for InternetStatus {
     }
 }
 
+struct SearchData {
+    query: String,
+}
+
+impl SearchData {
+    // And I was wondering why everything was so slow...
+    fn search_n_pages<'a>(
+        &self,
+        pages: Vec<(&'a WikipediaPage, NodeIndex<u32>)>,
+        n: usize,
+    ) -> Vec<(String, NodeIndex<u32>)> {
+        let fuse = fuse_rust::Fuse::default();
+
+        let pages = pages
+            .iter()
+            .map(|(page, index)| (page.title(), index))
+            .collect::<Vec<_>>();
+
+        let mut filtered =
+            fuse.search_text_in_iterable(&self.query, pages.iter().map(|(page, _)| page.as_str()));
+
+        filtered.sort_by(|result, result2| {
+            result
+                .score
+                .partial_cmp(&result2.score)
+                .expect("A page had an incomparable score to the search result")
+        });
+
+        filtered
+            .into_iter()
+            .take(n)
+            .map(|result| result.index)
+            .filter_map(|index| pages.get(index))
+            .map(|(page, index)| (page.clone(), **index))
+            .collect()
+    }
+}
+
+impl Default for SearchData {
+    fn default() -> Self {
+        SearchData {
+            query: String::new(),
+        }
+    }
+}
+
 const USER_AGENT: &str = "wikipedia-egui-graph/0.1.1";
 
 impl WikipediaGraphApp {
@@ -382,6 +429,8 @@ impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         match &self.internet_status.update(&self.client).0 {
             InternetStatusInner::Available => {
+                self.search_bar(ctx);
+
                 self.frame_counter.update_fps();
 
                 egui::CentralPanel::default().show(ctx, |ui| {

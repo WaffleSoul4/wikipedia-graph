@@ -1,6 +1,6 @@
 use crate::{
-    ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, StyleSettings,
-    USER_AGENT, WikipediaGraphApp,
+    ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, SearchData,
+    StyleSettings, USER_AGENT, WikipediaGraphApp,
 };
 use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
@@ -89,6 +89,7 @@ impl WikipediaGraphAppBuilder {
             initialization: 5,
             internet_status,
             language: self.language,
+            search_data: SearchData::default(),
         }
     }
 }
