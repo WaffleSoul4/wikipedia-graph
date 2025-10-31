@@ -4,9 +4,10 @@ use crate::client::WikipediaClientCommon;
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
 use std::fmt::Display;
+use std::sync::{Arc, Mutex};
 use thiserror::Error;
 use url::Url;
-use web_time::Duration;
+use web_time::{Duration, Instant};
 
 /// The Errors that may occur with the HTTP client
 #[derive(Debug, Error)]
