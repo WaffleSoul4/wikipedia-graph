@@ -6,7 +6,7 @@ use eframe::{App, CreationContext};
 use egui::{Context, Pos2, Ui, Vec2};
 use egui_graphs::{
     FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState, Graph,
-    GraphView, LayoutForceDirected, Metadata, SettingsInteraction, SettingsNavigation,
+    GraphView, LayoutForceDirected, MetadataFrame, SettingsInteraction, SettingsNavigation,
     SettingsStyle, events::Event,
 };
 use fastrand::Rng;
@@ -345,7 +345,7 @@ impl WikipediaGraphApp {
 
     fn focus_selected(&self, ui: &mut Ui) {
         if let Some(selected_node) = self.selected_node {
-            let mut meta = Metadata::load(ui);
+            let mut meta = MetadataFrame::new(None).load(ui);
 
             self.focused_node_from_meta(ui, &mut meta, selected_node);
 
@@ -353,7 +353,7 @@ impl WikipediaGraphApp {
         }
     }
 
-    fn focused_node_from_meta(&self, ui: &Ui, meta: &mut Metadata, index: NodeIndex) {
+    fn focused_node_from_meta(&self, ui: &Ui, meta: &mut MetadataFrame, index: NodeIndex) {
         self.focus_point_from_meta(
             ui,
             meta,
@@ -361,7 +361,7 @@ impl WikipediaGraphApp {
         );
     }
 
-    fn focus_point_from_meta(&self, ui: &Ui, meta: &mut Metadata, point: Vec2) {
+    fn focus_point_from_meta(&self, ui: &Ui, meta: &mut MetadataFrame, point: Vec2) {
         let pos = ui.max_rect().center().to_vec2() - point * meta.zoom;
 
         meta.pan = pos;
@@ -395,12 +395,12 @@ impl WikipediaGraphApp {
         self.graph.remove_node(index);
     }
 
-    fn update_position_from_meta(&mut self, meta: &mut Metadata) {
+    fn update_position_from_meta(&mut self, meta: &mut MetadataFrame) {
         meta.pan += self.control_settings.movement
     }
 
     fn update_position(&mut self, ui: &mut Ui) {
-        let mut meta = Metadata::load(ui);
+        let mut meta = MetadataFrame::new(None).load(ui);
 
         self.update_position_from_meta(&mut meta);
 
@@ -441,7 +441,7 @@ impl App for WikipediaGraphApp {
                     }
 
                     if self.initialization > 0 {
-                        let mut meta = Metadata::load(ui);
+                        let mut meta = MetadataFrame::new(None).load(ui);
 
                         meta.zoom = 2.0;
 
@@ -478,16 +478,7 @@ impl App for WikipediaGraphApp {
                         self.focus_selected(ui);
                     }
 
-                    let mut state = egui_graphs::GraphView::<
-                        (),
-                        (),
-                        petgraph::Directed,
-                        petgraph::stable_graph::DefaultIx,
-                        egui_graphs::DefaultNodeShape,
-                        egui_graphs::DefaultEdgeShape,
-                        FruchtermanReingoldWithCenterGravityState,
-                        LayoutForceDirected<FruchtermanReingoldWithCenterGravity>,
-                    >::get_layout_state(ui);
+                    let mut state = egui_graphs::get_layout_state::<FruchtermanReingoldWithCenterGravityState>(ui, None);
 
                     let layout_settings = &self.layout_settings;
                     state.base.c_repulse = layout_settings.c_repulse;
@@ -523,16 +514,7 @@ impl App for WikipediaGraphApp {
                         view = view.with_event_sink(&self.event_buffer);
                     }
 
-                    egui_graphs::GraphView::<
-                        (),
-                        (),
-                        petgraph::Directed,
-                        petgraph::stable_graph::DefaultIx,
-                        egui_graphs::DefaultNodeShape,
-                        egui_graphs::DefaultEdgeShape,
-                        FruchtermanReingoldWithCenterGravityState,
-                        LayoutForceDirected<FruchtermanReingoldWithCenterGravity>,
-                    >::set_layout_state(ui, state);
+                    egui_graphs::set_layout_state(ui, state, None);
 
                     ui.add(&mut view);
                 });

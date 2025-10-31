@@ -5,7 +5,7 @@ use egui::{
     UiBuilder,
 };
 use egui::{Key, Rect, Spinner, Vec2};
-use egui_graphs::Metadata;
+use egui_graphs::MetadataFrame;
 use log::{error, warn};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
@@ -67,7 +67,7 @@ impl WikipediaGraphApp {
             _ => 0.0,
         };
 
-        let mut meta = Metadata::load(ui);
+        let mut meta = MetadataFrame::new(None).load(ui);
 
         if ui.input(|input| input.key_pressed(Key::Space)) {
             let center = meta.screen_to_canvas_pos(ui.min_rect().center());
@@ -103,7 +103,7 @@ impl WikipediaGraphApp {
             "Focus selected node",
         );
 
-        let mut meta = Metadata::load(ui);
+        let mut meta = MetadataFrame::new(None).load(ui);
 
         ui.horizontal(|ui| {
             ui.label("Zoom:");
