@@ -1,6 +1,7 @@
 use crate::wikimedia_languages::WikiLanguage;
 use itertools::Itertools;
 use regex::Regex;
+use serde_json::Value;
 use thiserror::Error;
 use url::Url;
 
@@ -12,7 +13,7 @@ use crate::client::{HttpError, WikipediaClient};
 pub struct WikipediaPage {
     // This is called 'pathinfo' it's the part of the url after the /
     pathinfo: String,
-    page_text: Option<String>,
+    body: Option<WikipediaBody>,
 }
 
 /// An error that may occur when a language has no iso 639-1 representation
@@ -22,7 +23,9 @@ pub struct LanguageInvalidError;
 
 /// An error that may occur when the pathinfo of a page cannot be seperated from its body
 #[derive(Debug, Error)]
-#[error("Failed to parse pathinfo from body")]
+#[error(
+    "Failed to parse pathinfo from body, pathinfo can only be parsed from WikipediaBody::Links"
+)]
 pub struct PathinfoParseError;
 
 /// An error that may occur when parsing directly from a wikipedia URL
@@ -42,22 +45,182 @@ pub enum WikipediaUrlError {
     InvalidURL(#[from] url::ParseError),
 }
 
-// Some langs don't have an iso 639-1
-pub fn wikipedia_base_with_language(language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
-    Ok(Url::parse(
-        format!(
-            "https://{}.wikipedia.org/wiki/",
-            language.as_code_wiki().ok_or(LanguageInvalidError)?
+#[derive(Clone, Debug)]
+pub enum WikipediaBody {
+    Normal(serde_json::Value),
+    Links(serde_json::Value),
+}
+
+impl WikipediaBody {
+    /// A list of page titles that won't be included in linked pages
+    const FILTERED_PAGES: [&str; 1] = [
+        "Wayback Machine", // Almost all sources are linked to through the wayback machine
+    ];
+
+    pub fn normal_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {
+        serde_json::from_str(text).map(|val| WikipediaBody::Normal(val))
+    }
+
+    pub fn links_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {
+        serde_json::from_str(text).map(|val| WikipediaBody::Links(val))
+    }
+
+    /// Print the body as a string
+    ///
+    /// Output is either JSON or HTML
+    pub fn to_string(self) -> String {
+        match self {
+            Self::Normal(t) => t.to_string(),
+            Self::Links(t) => t.to_string(),
+        }
+    }
+
+    pub fn get_pathinfo(&self) -> Result<String, PathinfoParseError> {
+        match self {
+            WikipediaBody::Normal(_) => Err(PathinfoParseError),
+            WikipediaBody::Links(links) => Self::get_pathinfo_from_links(&links),
+        }
+    }
+
+    fn get_pathinfo_from_links(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
+        data.get("query")
+            .and_then(|query| query.get("pages")?.as_object()?.iter().next())
+            .map(|(_, value)| value)
+            .and_then(|value| value.get("title")?.as_str())
+            .map(|title| dbg!(title.to_string()))
+            .ok_or(PathinfoParseError)
+    }
+
+    pub fn get_linked_pages(&self) -> Vec<WikipediaPage> {
+        match self {
+            WikipediaBody::Normal(t) => Self::get_linked_pages_from_page_text(t),
+            WikipediaBody::Links(t) => Self::get_linked_pages_from_links(t),
+        }
+    }
+
+    fn get_linked_pages_from_links(data: &serde_json::Value) -> Vec<WikipediaPage> {
+        data.get("query")
+            .and_then(|query| query.get("pages")?.as_object()?.iter().next())
+            .map(|(_, value)| value)
+            .and_then(|data| data.get("links")?.as_array())
+            .map(|links| {
+                links
+                    .iter()
+                    .filter_map(|link| {
+                        Some(WikipediaPage::from_title(link.get("title")?.as_str()?))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn get_linked_pages_from_page_text(value: &Value) -> Vec<WikipediaPage> {
+        let page_text = match value
+            .get("parse")
+            .and_then(|parse| parse.get("wikitext"))
+            .and_then(|wikitext| wikitext.as_object()?.iter().next()?.1.as_str())
+        {
+            Some(t) => t,
+            None => return Vec::new(),
+        };
+
+        let regex = Regex::new(
+            r#"\[\[([a-zA-Z0-9 \(\)]+)(?:[|][a-zA-Z0-9 \(\)]+)?\]\]"#, // Don't ask
         )
-        .as_str(),
-    )
-    .expect(
-        format!(
-            "Wikipedia URL with language '{:?}' parsing failed",
-            language
-        )
-        .as_str(),
-    ))
+        .expect("Failed to compile regex to find linked pages");
+
+        regex
+            .captures_iter(&page_text)
+            .map(|capture| capture.extract::<1>())
+            .unique_by(|capture_data| capture_data.1[0])
+            .filter(|capture_data| {
+                Self::FILTERED_PAGES
+                    .iter()
+                    .all(|page| !capture_data.0.contains(page))
+            })
+            .map(|capture_data| WikipediaPage::from_title(capture_data.1[0]))
+            .collect()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum WikipediaUrlType {
+    Normal,
+    RawApi,
+    LinksApi,
+}
+
+impl WikipediaUrlType {
+    pub fn base_url(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
+        Ok(match self {
+            Self::Normal => Url::parse(
+                format!(
+                    "https://{}.wikipedia.org/wiki/",
+                    language.as_code_wiki().ok_or(LanguageInvalidError)?
+                )
+                .as_str(),
+            )
+            .expect(
+                format!(
+                    "Base Wikipedia URL with language '{:?}' parsing failed",
+                    language
+                )
+                .as_str(),
+            ),
+            Self::LinksApi | Self::RawApi => Url::parse(
+                format!(
+                    "https://{}.wikipedia.org/w/api.php",
+                    language.as_code_wiki().ok_or(LanguageInvalidError)?
+                )
+                .as_str(),
+            )
+            .expect(
+                format!(
+                    "Base Wikipedia API URL with language '{:?}' parsing failed",
+                    language
+                )
+                .as_str(),
+            ),
+        })
+    }
+
+    pub fn url_with(
+        &self,
+        language: WikiLanguage,
+        pathinfo: &String,
+    ) -> Result<Url, LanguageInvalidError> {
+        match self {
+            WikipediaUrlType::Normal => Ok(self.base_url(language)?.join(&pathinfo).expect(
+                format!(
+                    "Wikipedia URL for '{}' with language '{:?}' parsing failed",
+                    pathinfo, language
+                )
+                .as_str(),
+            )),
+            WikipediaUrlType::RawApi => {
+                let mut url = self.base_url(language)?;
+                url.set_query(Some(
+                    format!(
+                        "origin=*&action=parse&prop=wikitext&format=json&page={}",
+                        pathinfo
+                    )
+                    .as_str(),
+                ));
+                Ok(url)
+            }
+            WikipediaUrlType::LinksApi => {
+                let mut url = self.base_url(language)?;
+                url.set_query(Some(
+                    format!(
+                        "action=query&format=json&prop=links&pllimit=500&origin=*&titles={}",
+                        pathinfo
+                    )
+                    .as_str(),
+                ));
+                Ok(url)
+            }
+        }
+    }
 }
 
 fn verify_url(url: &Url) -> Result<(), WikipediaUrlError> {
@@ -78,18 +241,13 @@ fn verify_url(url: &Url) -> Result<(), WikipediaUrlError> {
 }
 
 impl WikipediaPage {
-    /// A list of page titles that won't be included in linked pages
-    const FILTERED_PAGES: [&str; 1] = [
-        "Wayback Machine", // Almost all sources are linked to through the wayback machine
-    ];
-
-    /// Manually set the page text of a wikipedia page
+    /// Manually set the page body of a wikipedia page
     ///
     /// This is helpful for loading pages from places other than wikipedia.org
-    pub fn set_page_text(&mut self, data: String) -> &mut Self {
-        let pathinfo_new = Self::get_pathinfo_from_page_text(&data);
+    pub fn set_page_body(&mut self, data: WikipediaBody) -> &mut Self {
+        let pathinfo_new = data.get_pathinfo();
 
-        self.page_text = Some(data);
+        self.body = Some(data);
 
         match pathinfo_new {
             Ok(pathinfo) => self.pathinfo = pathinfo,
@@ -101,24 +259,7 @@ impl WikipediaPage {
 
     /// Check if the page text is loaded
     pub fn is_page_text_loaded(&self) -> bool {
-        self.page_text.is_some()
-    }
-
-    /// Create a special random Wikipedia page
-    ///
-    /// This requires a client to get the page and then update the pathinfo accordingly
-    pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
-        let mut page = WikipediaPage::from_title("Special:Random");
-
-        page.load_page_text(client)?;
-
-        if let Err(e) = page.update_pathinfo_with_page_text(
-            &page.try_get_page_text().expect("Failed to get page text"),
-        ) {
-            log::error!("{e}");
-        };
-
-        Ok(page)
+        self.body.is_some()
     }
 
     /// Get the pathinfo of the wikipedia page
@@ -128,15 +269,7 @@ impl WikipediaPage {
 
     /// Get the url of the wikipedia page with a certain language
     pub fn url_with_lang(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
-        let base = crate::page::wikipedia_base_with_language(language)?;
-        match base.join(&self.pathinfo) {
-            Ok(t) => Ok(t),
-            Err(e) => panic!(
-                "Failed to join base url '{}' and '{}': {e}",
-                base.as_str(),
-                self.pathinfo
-            ),
-        }
+        WikipediaUrlType::Normal.url_with(language, &self.pathinfo)
     }
 
     /// Create a new WikipediaPage from the title
@@ -147,7 +280,7 @@ impl WikipediaPage {
 
         WikipediaPage {
             pathinfo: title.replace(" ", "_"),
-            page_text: None,
+            body: None,
         }
     }
 
@@ -185,17 +318,8 @@ impl WikipediaPage {
             .ok_or(WikipediaUrlError::InvalidPath)
             .map(|val| WikipediaPage {
                 pathinfo: val,
-                page_text: None,
+                body: None,
             })
-    }
-
-    fn update_pathinfo_with_page_text(
-        &mut self,
-        page_text: &String,
-    ) -> Result<&mut Self, PathinfoParseError> {
-        self.pathinfo = Self::get_pathinfo_from_page_text(&page_text)?;
-
-        Ok(self)
     }
 
     cfg_if::cfg_if! {
@@ -209,11 +333,22 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for the page data fails
-            pub fn get_page_text(&self, client: &WikipediaClient) -> Result<String, HttpError> {
-                match &self.page_text {
+            pub fn get_page_body(&self, client: &WikipediaClient) -> Result<WikipediaBody, HttpError> {
+                match &self.body {
                     Some(t) => Ok(t.clone()),
                     _ => client.get(self.pathinfo.clone()),
                 }
+            }
+
+            /// Get a random and unloaded page from the wikimedia API
+            ///
+            /// *This method requires the `client` feature*
+            ///
+            /// # Errors
+            ///
+            /// This method fails if the request for a random page fails
+            pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
+                client.random_title().map(|result| Self::from_title(result))
             }
 
             // Load the page text from the internet no matter what
@@ -229,11 +364,11 @@ impl WikipediaPage {
                 &mut self,
                 client: &WikipediaClient,
             ) -> Result<&mut Self, HttpError> {
-                let page_text = client.get(self.pathinfo.clone())?;
+                let page_body = client.get(self.pathinfo.clone())?;
 
-                let pathinfo_new = Self::get_pathinfo_from_page_text(&page_text);
+                let pathinfo_new = page_body.get_pathinfo();
 
-                self.page_text = Some(page_text);
+                self.body = Some(page_body);
 
                 match pathinfo_new {
                     Ok(pathinfo) => self.pathinfo = pathinfo,
@@ -251,9 +386,9 @@ impl WikipediaPage {
             ///
             /// This method fails if the request for the page data fails
             pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-                let text = self.get_page_text(client)?;
+                let text = self.get_page_body(client)?;
 
-                self.page_text = Some(text);
+                self.body = Some(text);
 
                 Ok(self)
             }
@@ -262,7 +397,7 @@ impl WikipediaPage {
 
     /// Remove any page text from memory
     pub fn unload_body(&mut self) -> &mut Self {
-        self.page_text = None;
+        self.body = None;
 
         self
     }
@@ -270,8 +405,8 @@ impl WikipediaPage {
     // All the 'try_...' functions mean is that they don't make any requests
 
     /// Get the page text if it it loaded
-    pub fn try_get_page_text(&self) -> Option<String> {
-        self.page_text.clone()
+    pub fn try_get_page_body(&self) -> Option<WikipediaBody> {
+        self.body.clone()
     }
 
     /// Give a best guess at the title of the page
@@ -279,57 +414,9 @@ impl WikipediaPage {
         capitalize(url_encor::decode(self.pathinfo.replace("_", " ").as_str()))
     }
 
-    fn get_linked_pages_from_page_text(page_text: &String) -> Vec<WikipediaPage> {
-        let regex = Regex::new(
-            "<a href=\"(/wiki/[a-zA-Z_\\(\\)]+)\"(?: class=\"[a-zA-Z-_]\")? title=\"([a-zA-Z ]+)\"",
-        )
-        .expect("Failed to compile regex to find linked pages");
-
-        regex
-            .captures_iter(&page_text)
-            .map(|capture| capture.extract::<2>())
-            .unique_by(|capture_data| capture_data.1[0])
-            .filter(|capture_data| {
-                Self::FILTERED_PAGES
-                    .iter()
-                    .all(|page| !capture_data.0.contains(page))
-            })
-            .filter_map(|capture_data| {
-                WikipediaPage::try_from_path(capture_data.1[0])
-                    .ok()
-                    .map(|mut page| {
-                        page.pathinfo = capture_data.1[1].to_string().replace(" ", "_");
-
-                        page
-                    })
-            })
-            .collect()
-    }
-
-    fn get_pathinfo_from_page_text(page_text: &String) -> Result<String, PathinfoParseError> {
-        let regex = Regex::new(
-            r#"<link rel=\"canonical\" href=\"(https:\/\/[a-zA-Z\/\.]{2}\.wikipedia.org\/wiki\/(.*))\">"#,
-        )
-        .expect("Title regex failed to compile");
-
-        Ok(page_text
-            .lines()
-            .filter(|l| l.contains("<link rel=\"canonical\""))
-            .filter_map(|l| regex.captures(l))
-            .next()
-            .ok_or(PathinfoParseError)?
-            .extract::<2>()
-            .1[1]
-            .to_string())
-    }
-
     /// Get all the pages that this page links to if the page text is loaded
     pub fn try_get_linked_pages(&self) -> Option<Vec<WikipediaPage>> {
-        if let Some(text) = &self.page_text {
-            return Some(WikipediaPage::get_linked_pages_from_page_text(text));
-        }
-
-        None
+        self.body.as_ref().map(|body| body.get_linked_pages())
     }
 }
 

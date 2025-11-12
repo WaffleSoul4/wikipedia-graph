@@ -12,23 +12,28 @@ pub fn multekrem_page() -> WikipediaPage {
 
     assert!(!page_text.is_empty(), "Failed to load multekrem page");
 
-    page.set_page_text(page_text);
+    page.set_page_body(
+        wikipedia_graph::WikipediaBody::normal_from_text(&page_text)
+            .expect("Failed to parse multekrem page"),
+    );
 
     page
 }
 
-const LINKED_MULTEKREM_PAGES: [&'static str; 8] = [
-    "https://wikipedia.org/wiki/Dessert",
+pub const NUM_LINKED_MULTEKREM_PAGES: usize = 10;
+
+const LINKED_MULTEKREM_PAGES: [&'static str; NUM_LINKED_MULTEKREM_PAGES] = [
     "https://wikipedia.org/wiki/Norway",
+    "https://wikipedia.org/wiki/Dessert",
     "https://wikipedia.org/wiki/Rubus_chamaemorus",
     "https://wikipedia.org/wiki/Whipped_cream",
     "https://wikipedia.org/wiki/Sugar",
     "https://wikipedia.org/wiki/Norwegian_cuisine",
+    "https://wikipedia.org/wiki/Dessert",
     "https://wikipedia.org/wiki/Krumkake",
+    "https://wikipedia.org/wiki/Kransekake",
     "https://wikipedia.org/wiki/List_of_Norwegian_desserts",
 ];
-
-pub const NUM_LINKED_MULTEKREM_PAGES: usize = 8;
 
 pub fn multekrem_pages_iter() -> impl Iterator<Item = WikipediaPage> {
     LINKED_MULTEKREM_PAGES

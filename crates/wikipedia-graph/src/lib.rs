@@ -38,6 +38,10 @@ cfg_if::cfg_if! {
         mod client;
         mod graph;
 
+        pub use client::HeaderError;
+
+        pub use http::HeaderMap;
+
         pub use client::WikipediaClient;
 
         pub use client::WikipediaClientConfig;
@@ -58,3 +62,5 @@ pub use page::{WikipediaPage, WikipediaUrlError};
 pub use url::Url;
 
 pub use wikimedia_languages::WikiLanguage;
+
+pub use page::WikipediaBody;

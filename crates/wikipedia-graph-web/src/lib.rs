@@ -1,58 +1,79 @@
-#![cfg(target_arch = "wasm32")]
-use wasm_bindgen::JsCast;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures as _;
-use wasm_log::Config;
-use web_sys::HtmlCanvasElement;
-use wikipedia_egui_graph::WikipediaGraphApp;
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use eframe::wasm_bindgen::{self, prelude::*};
+    use web_sys::HtmlCanvasElement;
+    use wikipedia_egui_graph::WikipediaGraphApp;
 
-#[wasm_bindgen(start)]
-pub fn start() -> Result<(), JsValue> {
-    wasm_log::init(Config::default());
+    #[derive(Clone)]
+    #[wasm_bindgen] // Recursive, this is fixed in later versions
+    pub struct WebHandle {
+        runner: eframe::WebRunner,
+    }
 
-    log::info!("Starting app...");
-    console_error_panic_hook::set_once();
+    #[wasm_bindgen]
+    impl WebHandle {
+        #[wasm_bindgen(constructor)]
+        pub fn new() -> Self {
+            wasm_log::init(wasm_log::Config::default());
 
-    wasm_bindgen_futures::spawn_local(async {
-        log::info!("Hello from async");
-        let _ = run().await;
-    });
-    Ok(())
+            Self {
+                runner: eframe::WebRunner::new(),
+            }
+        }
+
+        /// Call this once from JavaScript to start your app.
+        #[wasm_bindgen]
+        pub async fn start(
+            &self,
+            canvas: web_sys::HtmlCanvasElement,
+        ) -> Result<(), wasm_bindgen::JsValue> {
+            log::info!("Starting wasm...");
+
+            let app = self.runner.start(
+                // web_sys::window()
+                //     .expect("Failed to get window")
+                //     .document()
+                //     .expect("Failed to get document")
+                //     .get_element_by_id("wiki-canvas")
+                //     .expect("Failed to get wiki-canvas")
+                //     .dyn_into::<web_sys::HtmlCanvasElement>()
+                //     .expect("Failed to get canvas as a canvas"),
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(|cc| Ok(Box::new(WikipediaGraphApp::new(cc)))),
+            );
+
+            log::info!("Started runner... ");
+
+            app.await
+        }
+
+        #[wasm_bindgen]
+        pub fn destroy(&self) {
+            self.runner.destroy();
+        }
+
+        /// The JavaScript can check whether or not your app has crashed:
+        #[wasm_bindgen]
+        pub fn has_panicked(&self) -> bool {
+            self.runner.has_panicked()
+        }
+
+        #[wasm_bindgen]
+        pub fn panic_message(&self) -> Option<String> {
+            self.runner
+                .panic_summary()
+                .map(|s: eframe::web::PanicSummary| s.message())
+        }
+
+        #[wasm_bindgen]
+        pub fn panic_callstack(&self) -> Option<String> {
+            self.runner
+                .panic_summary()
+                .map(|s: eframe::web::PanicSummary| s.callstack())
+        }
+    }
 }
 
-#[wasm_bindgen]
-pub async fn run() -> Result<(), JsValue> {
-    let window = web_sys::window().ok_or_else(|| JsValue::from_str("no window"))?;
-
-    log::info!("Window initialized");
-
-    let document = window
-        .document()
-        .ok_or_else(|| JsValue::from_str("no document"))?;
-
-    log::info!("Document initialized");
-
-    let canvas = document
-        .get_element_by_id("wiki-graph")
-        .ok_or_else(|| JsValue::from_str("canvas with id 'the_canvas_id' not found"))?
-        .dyn_into::<HtmlCanvasElement>()
-        .map_err(|_| JsValue::from_str("failed to cast to HtmlCanvasElement"))?;
-
-    let web_options = eframe::WebOptions::default();
-
-    log::info!("Configuration options set");
-
-    eframe::WebRunner::new()
-        .start(
-            canvas,
-            web_options,
-            Box::new(|cc| {
-                log::info!("Creating app");
-                Ok::<Box<dyn eframe::App>, _>(Box::new(
-                    wikipedia_egui_graph::builder::WikipediaGraphAppBuilder::default().build(),
-                ))
-            }),
-        )
-        .await?;
-    Ok(())
-}
+#[cfg(target_arch = "wasm32")]
+use wasm::*;

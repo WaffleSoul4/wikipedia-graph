@@ -1,7 +1,10 @@
 mod client;
 pub use client::*;
 
-use crate::wikimedia_languages::WikiLanguage;
+use crate::{
+    page::{LanguageInvalidError, WikipediaUrlType},
+    wikimedia_languages::WikiLanguage,
+};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use std::{collections::HashMap, str::FromStr, time::Duration};
 use thiserror::Error;
@@ -18,6 +21,7 @@ pub struct WikipediaClientConfig {
     // Only non-default headers
     headers: HeaderMap<HeaderValue>,
     language: WikiLanguage,
+    url_type: WikipediaUrlType,
 }
 
 /// The default user agent
@@ -30,11 +34,14 @@ const USER_AGENT: &'static str = concat!(
 /// A wrapper around all possible header errors from the http crate
 #[derive(Error, Debug)]
 pub enum HeaderError {
+    /// The header name was invalid
     #[error("{0}")]
     InvalidHeaderName(#[from] http::header::InvalidHeaderName),
+    /// The header value was invalid
     #[error("{0}")]
     InvalidHeaderValue(#[from] http::header::InvalidHeaderValue),
     #[error("{0}")]
+    /// The maximum amount of headers was reached
     HeaderMapMaxSizeReached(#[from] http::header::MaxSizeReached),
 }
 
@@ -102,21 +109,22 @@ impl WikipediaClientConfig {
 
         Ok(self)
     }
+
+    /// Returns the headers of the client config
+    pub fn headers(&self) -> &HeaderMap {
+        &self.headers
+    }
 }
 
 impl Default for WikipediaClientConfig {
     fn default() -> Self {
-        let mut headers = HeaderMap::new();
-
-        headers.append(
-            http::header::ACCESS_CONTROL_ALLOW_ORIGIN,
-            HeaderValue::from_str("*").unwrap(),
-        );
+        let headers = HeaderMap::new();
 
         WikipediaClientConfig {
             language: WikiLanguage::from_code("en").expect("Language 'en' does not exist"),
             timeout: Some(Duration::from_secs(5)),
             headers,
+            url_type: WikipediaUrlType::RawApi,
         }
         .user_agent(USER_AGENT)
         .expect("Default headers are invalid")
@@ -129,25 +137,14 @@ impl Default for WikipediaClientConfig {
 trait WikipediaClientCommon {
     fn language(&self) -> WikiLanguage;
 
-    fn base_url(&self) -> Result<Url, crate::page::LanguageInvalidError> {
-        crate::page::wikipedia_base_with_language(self.language())
-    }
-
-    fn url_from_pathinfo<T: std::fmt::Display>(&self, pathinfo: T) -> Result<Url, url::ParseError> {
+    fn url_from_pathinfo<T: std::fmt::Display>(
+        &self,
+        pathinfo: T,
+        url_type: WikipediaUrlType,
+    ) -> Result<Url, LanguageInvalidError> {
         let pathinfo = pathinfo.to_string();
 
-        let base_url = self.base_url().expect("Selected language is invalid");
-
-        if pathinfo.eq("Special:Random") {
-            return Ok(
-                Url::parse(format!("{}special:random", base_url.to_string()).as_str())
-                    .expect("Random URL is not valid"),
-            );
-        }
-
-        self.base_url()
-            .expect("Selected language is invalid")
-            .join(pathinfo.as_str())
+        url_type.url_with(self.language(), &pathinfo)
     }
 }
 
@@ -156,7 +153,7 @@ mod test {
     mod language {
         use crate::WikiLanguage;
 
-        use crate::page::wikipedia_base_with_language;
+        use crate::page::WikipediaUrlType;
 
         const TEST_LANGUAGES: [(&str, &str); 20] = [
             ("ar", "Arabic"),
@@ -184,11 +181,12 @@ mod test {
         #[test]
         fn languages_are_valid() {
             for (code, name) in TEST_LANGUAGES {
-                let url = wikipedia_base_with_language(
-                    WikiLanguage::from_code(code)
-                        .expect(format!("Wikipedia code '{code}' is invalid").as_str()),
-                )
-                .expect(format!("Language '{name}' has no wikipedia code").as_str());
+                let url = WikipediaUrlType::Normal
+                    .base_url(
+                        WikiLanguage::from_code(code)
+                            .expect(format!("Wikipedia code '{code}' is invalid").as_str()),
+                    )
+                    .expect(format!("Language '{name}' has no wikipedia code").as_str());
                 if !url.host_str().map_or(false, |host| {
                     host.starts_with(code) && host.ends_with("wikipedia.org")
                 }) {

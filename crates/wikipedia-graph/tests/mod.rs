@@ -1,5 +1,6 @@
 mod common;
 mod graphs;
+use pretty_assertions::assert_eq;
 use url::Url;
 use wikipedia_graph::{WikiLanguage, WikipediaPage};
 
@@ -26,7 +27,12 @@ fn linked_pages() {
     linked_pages
         .into_iter()
         .zip(multekrem_linked_pages)
-        .for_each(|(linked, known_linked)| assert_eq!(linked.pathinfo(), known_linked.pathinfo())); // Better error message than itertools::eq
+        .for_each(|(linked, known_linked)| {
+            assert_eq!(
+                linked.pathinfo().to_lowercase(),
+                known_linked.pathinfo().to_lowercase()
+            )
+        }); // Better error message than itertools::eq
 }
 
 #[test]

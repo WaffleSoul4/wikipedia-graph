@@ -25,6 +25,13 @@ egui_graphs = { workspace = true, optional = true }
 http = { version = "1.3", optional = true }
 ehttp = { version = "0.5.0", optional = true }
 
+# Serialisation
+serde = { version = "1.0", features = ["derive"]}
+serde_json = { version = "1.0" }
+
+[dev-dependencies]
+pretty_assertions = { version = "1.4" }
+
 [features]
 default = ["petgraph", "client"]
 graphs = []

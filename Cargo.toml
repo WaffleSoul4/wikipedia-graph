@@ -13,7 +13,6 @@ petgraph = { version = "0.8", default-features = false, features = ["std", "stab
 log = "0.4"
 
 # ui
-# Doesn't support latest egui
 egui_graphs = { version = "0.29" }
 eframe = "0.33"
 egui = "0.33"

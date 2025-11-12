@@ -1,15 +1,6 @@
 #!/bin/bash
 
-current_path=$(basename "$PWD")
-
-case "$current_path" in 
-  "wikipedia-graph")
-    echo "> Directory confirmed"
-    ;;
-  *)
-    echo "Run this script in the workspace root"
-    exit 1
-esac
+SCRIPT_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cargo run --bin wikimedia-language-codegen
 

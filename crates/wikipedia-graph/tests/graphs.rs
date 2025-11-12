@@ -5,6 +5,7 @@ mod common;
 mod petgraph {
     use crate::common::{self, NUM_LINKED_MULTEKREM_PAGES, multekrem_page};
     use petgraph::prelude::StableDiGraph;
+    use pretty_assertions::assert_eq;
     use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
 
     #[test]
@@ -27,7 +28,12 @@ mod petgraph {
                     .expect("Page expansion returned and invalid index")
             })
             .zip(common::multekrem_pages_iter())
-            .for_each(|(known, node)| assert_eq!(known.pathinfo(), node.pathinfo()));
+            .for_each(|(known, node)| {
+                assert_eq!(
+                    known.pathinfo().to_lowercase(),
+                    node.pathinfo().to_lowercase()
+                )
+            });
     }
 
     #[test]

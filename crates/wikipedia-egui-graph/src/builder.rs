@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
     ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, SearchData,
     StyleSettings, USER_AGENT, WikipediaGraphApp,
@@ -6,39 +8,62 @@ use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
 use log::{error, info};
 use petgraph::prelude::StableDiGraph;
-use wikipedia_graph::{WikiLanguage, WikipediaClient, WikipediaClientConfig, WikipediaPage};
+use wikipedia_graph::{
+    HeaderMap, WikiLanguage, WikipediaClient, WikipediaClientConfig, WikipediaPage,
+};
 
 // Don't worry, I might add more
 pub struct WikipediaGraphAppBuilder {
+    client_config: WikipediaClientConfig,
     language: WikiLanguage,
 }
 
 impl Default for WikipediaGraphAppBuilder {
     fn default() -> Self {
         WikipediaGraphAppBuilder {
-            language: WikiLanguage::from_code("en").expect("en is not a valid iso"),
+            client_config: WikipediaClientConfig::default()
+                .language(WikiLanguage::from_code("en").expect("Language 'en' doesn't exist"))
+                .user_agent(USER_AGENT)
+                .expect("User agent is invalid"),
+            language: WikiLanguage::from_code("en").expect("Language 'en' doesn't exist"),
         }
     }
 }
 
 impl WikipediaGraphAppBuilder {
     pub fn with_language(self, language: WikiLanguage) -> Self {
-        Self { language, ..self }
+        Self {
+            language,
+            client_config: self.client_config.language(language),
+            ..self
+        }
+    }
+
+    pub fn with_header(
+        self,
+        title: impl Display,
+        content: impl Display,
+    ) -> Result<Self, wikipedia_graph::HeaderError> {
+        Ok(Self {
+            client_config: self.client_config.add_header(title, content)?,
+            ..self
+        })
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.client_config.headers()
     }
 
     pub fn build(self) -> WikipediaGraphApp {
-        let config = WikipediaClientConfig::default()
-            .language(self.language)
-            .user_agent(USER_AGENT)
-            .expect("User agent is invalid");
+        log::info!("Building App... ");
+
+        let config = self.client_config;
 
         let client = WikipediaClient::from_config(config);
 
         let graph = StableDiGraph::default();
 
-        let mut internet_status = InternetStatus::default();
-
-        internet_status.test_internet(&client);
+        let internet_status = InternetStatus::unavailable();
 
         let mut graph = Graph::new(graph);
 
@@ -67,6 +92,8 @@ impl WikipediaGraphAppBuilder {
         #[cfg(target_arch = "wasm32")]
         let event_buffer: std::rc::Rc<std::cell::RefCell<Vec<egui_graphs::events::Event>>> =
             std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+
+        log::info!("App built!");
 
         WikipediaGraphApp {
             graph: graph,

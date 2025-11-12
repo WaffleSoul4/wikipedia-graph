@@ -66,6 +66,7 @@ pub trait WikipediaGraph<IndexType: Clone> {
     /// Place all linked pages as nodes on the graph and return only newly created nodes
     ///
     /// *This method requires the `client` feature*
+    /// 
     /// *This method requires the `graphs` feature*
     ///
     /// # Errors

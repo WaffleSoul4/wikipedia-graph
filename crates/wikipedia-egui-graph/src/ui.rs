@@ -35,13 +35,18 @@ impl WikipediaGraphApp {
                             visuals.code_bg_color
                         };
 
-                        Frame::NONE.corner_radius(3.).inner_margin(2.).outer_margin(2.).fill(fill).show(ui, |ui| {
-                            let label = ui.label(name);
+                        Frame::NONE
+                            .corner_radius(3.)
+                            .inner_margin(2.)
+                            .outer_margin(2.)
+                            .fill(fill)
+                            .show(ui, |ui| {
+                                let label = ui.label(name);
 
-                            if label.clicked() {
-                                self.selected_node = Some(index)
-                            }
-                        });
+                                if label.clicked() {
+                                    self.selected_node = Some(index)
+                                }
+                            });
                     });
                 }
             };

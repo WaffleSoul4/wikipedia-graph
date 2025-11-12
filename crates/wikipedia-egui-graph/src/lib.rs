@@ -137,16 +137,24 @@ impl Default for StyleSettings {
 pub struct InternetStatus(InternetStatusInner);
 
 impl InternetStatus {
-    fn get_base(&self, client: &WikipediaClient) -> Result<(), wikipedia_graph::HttpError> {
-        client
-            .get(
-                Url::parse("https://wikipedia.org")
-                    .expect("Failed to parse url 'https://wikipedia.org"),
-            )
-            .map(|_| ())
+    fn unavailable() -> Self {
+        InternetStatus(InternetStatusInner::Unavailable {
+            wait_time: Duration::from_secs(1),
+            last_retry: Instant::now(),
+            wait_max: Duration::from_mins(1),
+            error: HttpError::PageNotFound,
+        })
     }
 
-    fn update(&mut self, client: &WikipediaClient) -> &mut Self {
+    fn get_base(
+        &self,
+        client: &WikipediaClient,
+        egui_ctx: Context,
+    ) -> Result<(), wikipedia_graph::HttpError> {
+        client.get_api_base_callback(move || egui_ctx.request_repaint())
+    }
+
+    fn update(&mut self, client: &WikipediaClient, egui_ctx: Context) -> &mut Self {
         match self.0 {
             InternetStatusInner::Available => {}
             InternetStatusInner::Unavailable {
@@ -156,7 +164,7 @@ impl InternetStatus {
                 error: _,
             } => {
                 if Instant::now().duration_since(last_retry) > wait_time {
-                    self.test_internet(client);
+                    self.test_internet(client, egui_ctx);
                 }
             }
         }
@@ -173,8 +181,8 @@ impl InternetStatus {
         }
     }
 
-    fn test_internet(&mut self, client: &WikipediaClient) {
-        match self.get_base(client) {
+    fn test_internet(&mut self, client: &WikipediaClient, egui_ctx: Context) {
+        match self.get_base(client, egui_ctx) {
             Ok(_) => {
                 info!("Internet available");
                 self.0 = InternetStatusInner::Available
@@ -241,12 +249,6 @@ impl InternetStatusInner {
             }
             _ => {}
         }
-    }
-}
-
-impl Default for InternetStatus {
-    fn default() -> Self {
-        InternetStatus(InternetStatusInner::Available)
     }
 }
 
@@ -427,7 +429,7 @@ impl WikipediaGraphApp {
 
 impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        match &self.internet_status.update(&self.client).0 {
+        match &self.internet_status.update(&self.client, ctx.clone()).0 {
             InternetStatusInner::Available => {
                 self.search_bar(ctx);
 
@@ -478,7 +480,9 @@ impl App for WikipediaGraphApp {
                         self.focus_selected(ui);
                     }
 
-                    let mut state = egui_graphs::get_layout_state::<FruchtermanReingoldWithCenterGravityState>(ui, None);
+                    let mut state = egui_graphs::get_layout_state::<
+                        FruchtermanReingoldWithCenterGravityState,
+                    >(ui, None);
 
                     let layout_settings = &self.layout_settings;
                     state.base.c_repulse = layout_settings.c_repulse;
@@ -558,7 +562,8 @@ impl App for WikipediaGraphApp {
                     })
                     .inner
                 {
-                    self.internet_status.test_internet(&self.client);
+                    self.internet_status
+                        .test_internet(&self.client, ctx.clone());
                 }
             }
         }
