@@ -1,8 +1,5 @@
 use crate::WikipediaPage;
 
-#[cfg(feature = "client")]
-use crate::client::WikipediaClient;
-
 #[cfg(feature = "petgraph")]
 mod petgraph_graph;
 
@@ -12,7 +9,7 @@ mod egui_graph;
 /// The type used for indexing nodes on the graph
 ///
 ///  *This alias requires the `graphs` feature*
-pub type IndexType = usize;
+pub type DefaultIndexType = usize;
 
 /// A trait that adds methods for manipulating and expanding wikipedia pages
 ///
@@ -65,50 +62,31 @@ pub trait WikipediaGraph<IndexType: Clone> {
 
     /// Place all linked pages as nodes on the graph and return only newly created nodes
     ///
-    /// *This method requires the `client` feature*
-    /// 
     /// *This method requires the `graphs` feature*
-    ///
-    /// # Errors
-    ///
-    /// This method fails if the request for the wikipedia page fails
     #[cfg(feature = "client")]
-    fn try_expand_node(
-        &mut self,
-        index: IndexType,
-        client: &WikipediaClient,
-    ) -> Result<Option<Vec<IndexType>>, crate::client::HttpError> {
-        let page = self.node_weight_mut(index.clone());
+    fn try_expand_node(&mut self, index: IndexType) -> Option<Vec<IndexType>> {
+        let page = self.node_weight_mut(index.clone())?.clone();
 
-        let page = match page {
-            Some(t) => t,
-            None => return Ok(None),
-        };
+        let linked_pages = page.try_get_linked_pages()?;
 
-        let linked_pages = page
-            .load_page_text(client)?
-            .try_get_linked_pages()
-            .expect("Pages failed to load");
+        let mut indicies = Vec::new();
 
-        let node_indicies = linked_pages
-            .into_iter()
-            .filter_map(|page| match self.node_exists_with_value(&page) {
+        for page in linked_pages.into_iter() {
+            match self.node_exists_with_value(&page) {
                 Some(existing_index) => {
                     if !self.edge_exists(index.clone(), existing_index.clone()) {
                         self.add_edge(index.clone(), existing_index);
                     }
-
-                    None
                 }
-                None => Some(self.add_node(page)),
-            })
-            .collect::<Vec<IndexType>>();
+                None => indicies.push(self.add_node(page)),
+            }
+        }
 
-        node_indicies.iter().for_each(|node_index| {
+        indicies.iter().for_each(|node_index| {
             self.add_edge(index.clone(), node_index.clone());
         });
 
-        Ok(Some(node_indicies))
+        Some(indicies)
     }
 
     /// Check if a node exists with a specified value

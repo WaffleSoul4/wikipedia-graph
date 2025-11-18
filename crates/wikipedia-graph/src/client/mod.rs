@@ -6,18 +6,14 @@ use crate::{
     wikimedia_languages::WikiLanguage,
 };
 use http::{HeaderMap, HeaderName, HeaderValue};
-use std::{collections::HashMap, str::FromStr, time::Duration};
+use std::{collections::HashMap, str::FromStr};
 use thiserror::Error;
 use url::Url;
-
-/// Amount of redirects the client accepts
-const CLIENT_REDIRECTS: u32 = 2;
 
 /// The configuration for a WikipediaClient
 ///
 /// This currently stores the same information as the client itself, but may be useful later
 pub struct WikipediaClientConfig {
-    timeout: Option<Duration>,
     // Only non-default headers
     headers: HeaderMap<HeaderValue>,
     language: WikiLanguage,
@@ -52,11 +48,10 @@ impl WikipediaClientConfig {
     ///
     /// This method fails whenever invalid headers are provided
     pub fn new(
-        timeout: Option<Duration>,
         headers: HashMap<&str, &str>,
         language: WikiLanguage,
     ) -> Result<Self, HeaderError> {
-        let without_headers = Self::default().timeout(timeout).language(language);
+        let without_headers = Self::default().language(language);
 
         headers
             .iter()
@@ -72,13 +67,6 @@ impl WikipediaClientConfig {
     /// The default value is "wikipedia-graph/{current version}"
     pub fn user_agent(self, user_agent: impl std::fmt::Display) -> Result<Self, HeaderError> {
         self.add_header(http::header::USER_AGENT, user_agent)
-    }
-
-    /// Sets the request timeout, or how long to wait for a request before returning an error
-    ///
-    /// The default value is 5 seconds
-    pub fn timeout(self, timeout: Option<Duration>) -> Self {
-        Self { timeout, ..self }
     }
 
     /// Sets the language of the request
@@ -122,7 +110,6 @@ impl Default for WikipediaClientConfig {
 
         WikipediaClientConfig {
             language: WikiLanguage::from_code("en").expect("Language 'en' does not exist"),
-            timeout: Some(Duration::from_secs(5)),
             headers,
             url_type: WikipediaUrlType::RawApi,
         }
@@ -181,7 +168,7 @@ mod test {
         #[test]
         fn languages_are_valid() {
             for (code, name) in TEST_LANGUAGES {
-                let url = WikipediaUrlType::Normal
+                let url = WikipediaUrlType::Basic
                     .base_url(
                         WikiLanguage::from_code(code)
                             .expect(format!("Wikipedia code '{code}' is invalid").as_str()),

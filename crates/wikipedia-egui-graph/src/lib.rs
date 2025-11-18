@@ -1,6 +1,7 @@
 pub mod builder;
 mod ui;
 
+use crate::builder::WikipediaGraphAppBuilder;
 use crossbeam::channel::{Receiver, Sender};
 use eframe::{App, CreationContext};
 use egui::{Context, Pos2, Ui, Vec2};
@@ -10,16 +11,41 @@ use egui_graphs::{
     SettingsStyle, events::Event,
 };
 use fastrand::Rng;
-use log::{error, info};
+use log::warn;
 use petgraph::graph::NodeIndex;
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex};
 use web_time::{Duration, Instant};
-
 use wikipedia_graph::{
-    HttpError, IndexType, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
+    HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
 };
 
-use crate::builder::WikipediaGraphAppBuilder;
+type StoreType<T> = Arc<Mutex<Option<Result<T, HttpError>>>>;
+
+fn store_callback<T>(store: StoreType<T>) -> impl Fn(Result<T, HttpError>) {
+    move |response| match store.lock() {
+        Ok(mut t) => *t = Some(response),
+        Err(mut e) => {
+            warn!("Waiting on mutex...");
+            **e.get_mut() = Some(response)
+        }
+    }
+}
+
+fn store_callback_vec<T>(
+    data: Arc<Mutex<Vec<(NodeIndex, Result<T, HttpError>, NodeAction)>>>,
+    index: NodeIndex,
+    action: NodeAction,
+) -> impl Fn(Result<T, HttpError>) {
+    move |response| match data.lock() {
+        Ok(mut data) => {
+            data.push((index, response, action));
+        }
+        Err(mut e) => {
+            warn!("Waiting on mutex...");
+            e.get_mut().push((index, response, action));
+        }
+    }
+}
 
 pub struct WikipediaGraphApp {
     pub graph: Graph<WikipediaPage>,
@@ -31,7 +57,7 @@ pub struct WikipediaGraphApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub event_reader: Receiver<Event>,
     #[cfg(target_arch = "wasm32")]
-    pub event_buffer: Rc<RefCell<Vec<Event>>>,
+    pub event_buffer: std::rc::Rc<std::cell::RefCell<Vec<Event>>>,
     pub client: WikipediaClient,
     pub frame_counter: FrameCounter,
     pub selected_node: Option<NodeIndex>,
@@ -43,6 +69,8 @@ pub struct WikipediaGraphApp {
     pub internet_status: InternetStatus,
     pub language: WikiLanguage,
     pub search_data: SearchData,
+    pub node_stores: Arc<Mutex<Vec<(NodeIndex, Result<WikipediaPage, HttpError>, NodeAction)>>>,
+    pub test_store: StoreType<()>,
 }
 
 pub struct FrameCounter {
@@ -139,22 +167,23 @@ pub struct InternetStatus(InternetStatusInner);
 impl InternetStatus {
     fn unavailable() -> Self {
         InternetStatus(InternetStatusInner::Unavailable {
-            wait_time: Duration::from_secs(1),
+            wait_time: Duration::from_secs(5),
             last_retry: Instant::now(),
             wait_max: Duration::from_mins(1),
             error: HttpError::PageNotFound,
+            waiting: false,
         })
     }
 
-    fn get_base(
-        &self,
-        client: &WikipediaClient,
-        egui_ctx: Context,
-    ) -> Result<(), wikipedia_graph::HttpError> {
-        client.get_api_base_callback(move || egui_ctx.request_repaint())
+    fn get_base(&self, client: &WikipediaClient, store: StoreType<()>) {
+        client.get_api_base(store_callback(store));
     }
 
-    fn update(&mut self, client: &WikipediaClient, egui_ctx: Context) -> &mut Self {
+    fn update(
+        &mut self,
+        client: &WikipediaClient,
+        store: Arc<Mutex<Option<Result<(), HttpError>>>>,
+    ) -> &mut Self {
         match self.0 {
             InternetStatusInner::Available => {}
             InternetStatusInner::Unavailable {
@@ -162,9 +191,19 @@ impl InternetStatus {
                 last_retry,
                 wait_max: _,
                 error: _,
+                waiting,
             } => {
                 if Instant::now().duration_since(last_retry) > wait_time {
-                    self.test_internet(client, egui_ctx);
+                    self.test_internet(client, store);
+                } else if waiting {
+                    if let Ok(mut response) = store.try_lock() {
+                        if let Some(response) = response.take() {
+                            match response {
+                                Ok(()) => self.0 = InternetStatusInner::Available,
+                                Err(e) => self.0.reset_unavailable(e),
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -172,39 +211,24 @@ impl InternetStatus {
         self
     }
 
+    #[allow(unused)] // Haven't set up proper network handling
     fn set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
         self.0 = InternetStatusInner::Unavailable {
             wait_time,
             last_retry: Instant::now(),
             wait_max,
             error: error,
+            waiting: false,
         }
     }
 
-    fn test_internet(&mut self, client: &WikipediaClient, egui_ctx: Context) {
-        match self.get_base(client, egui_ctx) {
-            Ok(_) => {
-                info!("Internet available");
-                self.0 = InternetStatusInner::Available
-            }
-            Err(e) => {
-                error!("Internet test failed: {e}");
+    fn test_internet(&mut self, client: &WikipediaClient, store: StoreType<()>) {
+        self.get_base(client, store);
 
-                match self.0 {
-                    InternetStatusInner::Available => {
-                        self.set_unavailable(Duration::from_secs(5), Duration::from_mins(1), e)
-                    }
-                    InternetStatusInner::Unavailable {
-                        wait_time: _,
-                        last_retry: _,
-                        wait_max: _,
-                        error: _,
-                    } => self.0.reset_unavailable(e),
-                }
-            }
-        }
+        self.0.set_waiting();
     }
 
+    #[allow(unused)]
     fn try_set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
         match self.0 {
             InternetStatusInner::Available => {
@@ -213,6 +237,7 @@ impl InternetStatus {
                     last_retry: Instant::now(),
                     wait_max,
                     error,
+                    waiting: false,
                 }
             }
             _ => {}
@@ -227,10 +252,17 @@ enum InternetStatusInner {
         last_retry: Instant,
         wait_max: Duration,
         error: HttpError,
+        waiting: bool,
     },
 }
 
 impl InternetStatusInner {
+    fn set_waiting(&mut self) {
+        if let Self::Unavailable { waiting, .. } = self {
+            *waiting = true;
+        }
+    }
+
     fn reset_unavailable(&mut self, new_error: HttpError) {
         match self {
             InternetStatusInner::Unavailable {
@@ -238,6 +270,7 @@ impl InternetStatusInner {
                 last_retry,
                 wait_max,
                 error,
+                waiting: _,
             } => {
                 *error = new_error;
                 *last_retry = Instant::now();
@@ -252,16 +285,21 @@ impl InternetStatusInner {
     }
 }
 
-struct SearchData {
+pub struct SearchData {
+    page_count: usize,
     query: String,
+    last_update: Instant,
+    stored_pages: Vec<(String, NodeIndex)>,
 }
 
 impl SearchData {
-    // And I was wondering why everything was so slow...
-    fn search_n_pages<'a>(
+    fn time_since_update(&self) -> Duration {
+        Instant::now().duration_since(self.last_update)
+    }
+
+    fn search_pages<'a>(
         &self,
         pages: Vec<(&'a WikipediaPage, NodeIndex<u32>)>,
-        n: usize,
     ) -> Vec<(String, NodeIndex<u32>)> {
         let fuse = fuse_rust::Fuse::default();
 
@@ -282,11 +320,27 @@ impl SearchData {
 
         filtered
             .into_iter()
-            .take(n)
+            .take(self.page_count)
             .map(|result| result.index)
             .filter_map(|index| pages.get(index))
             .map(|(page, index)| (page.clone(), **index))
             .collect()
+    }
+
+    fn get_searched_pages(
+        &mut self,
+        indicies: Vec<(&WikipediaPage, NodeIndex<u32>)>,
+    ) -> Vec<(String, NodeIndex<u32>)> {
+        // This is annoying to do
+        if self.time_since_update() > Duration::from_millis(200) {
+            let pages = self.search_pages(indicies);
+
+            self.stored_pages = pages.clone();
+
+            pages
+        } else {
+            self.stored_pages.clone()
+        }
     }
 }
 
@@ -294,8 +348,17 @@ impl Default for SearchData {
     fn default() -> Self {
         SearchData {
             query: String::new(),
+            last_update: Instant::now(),
+            stored_pages: Vec::with_capacity(10),
+            page_count: 10,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum NodeAction {
+    Expand,
+    None,
 }
 
 const USER_AGENT: &str = "wikipedia-egui-graph/0.1.1";
@@ -311,37 +374,77 @@ impl WikipediaGraphApp {
 }
 
 impl WikipediaGraphApp {
+    pub fn update_nodes_from_store(
+        store: &mut Arc<Mutex<Vec<(NodeIndex, Result<WikipediaPage, HttpError>, NodeAction)>>>,
+        graph: &mut Graph<WikipediaPage>,
+        rng: &mut Rng,
+    ) {
+        match store.try_lock() {
+            Ok(mut store) => {
+                let len = store.len();
+
+                store
+                    .drain(0..len)
+                    .into_iter()
+                    .filter_map(|(index, response, action)| match response {
+                        Ok(t) => Some((index, t, action)),
+                        Err(e) => {
+                            warn!("Request failed: {e}");
+                            None
+                        }
+                    })
+                    .for_each(|(index, page, action)| match graph.node_mut(index) {
+                        Some(node) => {
+                            node.set_label(page.title());
+                            *node.payload_mut() = page;
+
+                            match action {
+                                NodeAction::Expand => {
+                                    Self::expand_node_with_graph(graph, rng, index);
+                                }
+                                NodeAction::None => {}
+                            }
+                        }
+                        None => warn!(
+                            "Unable to find the node for page '{}' at index '{}'",
+                            page.title(),
+                            index.index()
+                        ),
+                    });
+            }
+            Err(e) => warn!("Main thread failed to get lock: {e}"),
+        }
+    }
+
     fn expand_node(&mut self, index: NodeIndex) {
-        Self::expand_node_with_graph(&mut self.graph, &self.client, &mut self.rng, index)
+        self.load_node(index, NodeAction::Expand);
     }
 
     pub fn expand_node_with_graph(
         graph: &mut Graph<WikipediaPage>,
-        client: &WikipediaClient,
         rng: &mut Rng,
         index: NodeIndex,
     ) {
-        match graph.try_expand_node(index, client) {
-            Err(e) => error!("Request failed: {e}"),
-            Ok(Some(indicies)) => {
+        match graph.try_expand_node(index) {
+            Some(indicies) => {
                 let parent_pos = graph
                     .node(index)
                     .map(|node| node.location())
                     .unwrap_or(Pos2::ZERO);
 
                 for index in indicies {
-                    let node = graph.node_mut(index).expect("Failed to find added nodes");
+                    let node = graph
+                        .node_mut(index)
+                        .expect("Failed to find newly added nodes");
 
-                    let pos = Pos2::new(rng.f32().clamp(-1.0, 1.0), rng.f32().clamp(-1.0, 1.0));
+                    let pos = Pos2::new(rng.i8(-5..5) as f32, rng.i8(-5..5) as f32);
 
                     node.set_location(pos + parent_pos.to_vec2());
 
-                    let title = node.payload().title();
-
-                    node.set_label(title);
+                    node.set_label(node.payload().title());
                 }
             }
-            Ok(None) => error!("Expanded node not found"),
+            None => warn!("Failed to expand node: node not found at index"),
         }
     }
 
@@ -425,12 +528,33 @@ impl WikipediaGraphApp {
             self.expand_node(index);
         }
     }
+
+    pub fn load_node(&mut self, index: NodeIndex, action: NodeAction) {
+        if let Some(node) = self.graph.node(index) {
+            if let Err(e) = node.payload().load_page_text(
+                &self.client,
+                store_callback_vec(self.node_stores.clone(), index, action),
+            ) {
+                warn!("{e}") // Self explanatory error
+            }
+        }
+    }
 }
 
 impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        match &self.internet_status.update(&self.client, ctx.clone()).0 {
+        match &self
+            .internet_status
+            .update(&self.client, self.test_store.clone())
+            .0
+        {
             InternetStatusInner::Available => {
+                Self::update_nodes_from_store(
+                    &mut self.node_stores,
+                    &mut self.graph,
+                    &mut self.rng,
+                );
+
                 self.search_bar(ctx);
 
                 self.frame_counter.update_fps();
@@ -468,7 +592,7 @@ impl App for WikipediaGraphApp {
                             Event::NodeDoubleClick(event) => {
                                 let parent_index = NodeIndex::new(event.id);
 
-                                self.expand_node(parent_index);
+                                self.load_node(parent_index, NodeAction::Expand);
                             }
                             // Event::Pan(pan) => self.pan = pan.new_pan,
                             // Event::Zoom(zoom) => self.zoom = zoom.new_zoom,
@@ -547,8 +671,8 @@ impl App for WikipediaGraphApp {
             InternetStatusInner::Unavailable {
                 wait_time: retry_time,
                 last_retry,
-                wait_max: _,
                 error,
+                ..
             } => {
                 if egui::CentralPanel::default()
                     .show(ctx, |ui| {
@@ -563,7 +687,7 @@ impl App for WikipediaGraphApp {
                     .inner
                 {
                     self.internet_status
-                        .test_internet(&self.client, ctx.clone());
+                        .test_internet(&self.client, self.test_store.clone());
                 }
             }
         }

@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, SearchData,
@@ -6,11 +9,8 @@ use crate::{
 };
 use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
-use log::{error, info};
 use petgraph::prelude::StableDiGraph;
-use wikipedia_graph::{
-    HeaderMap, WikiLanguage, WikipediaClient, WikipediaClientConfig, WikipediaPage,
-};
+use wikipedia_graph::{HeaderMap, WikiLanguage, WikipediaClient, WikipediaClientConfig};
 
 // Don't worry, I might add more
 pub struct WikipediaGraphAppBuilder {
@@ -65,18 +65,7 @@ impl WikipediaGraphAppBuilder {
 
         let internet_status = InternetStatus::unavailable();
 
-        let mut graph = Graph::new(graph);
-
-        let selected_node = match WikipediaPage::random(&client) {
-            Ok(page) => {
-                let title = page.title();
-                Some(graph.add_node_with_label(page, title))
-            }
-            Err(e) => {
-                error!("Failed to load initial random node: {e}");
-                None
-            }
-        };
+        let graph = Graph::new(graph);
 
         let interaction_settings = SettingsInteraction::new()
             .with_node_clicking_enabled(true)
@@ -108,7 +97,7 @@ impl WikipediaGraphAppBuilder {
             event_buffer,
             client,
             frame_counter: FrameCounter::default(),
-            selected_node,
+            selected_node: None,
             control_settings: ControlSettings::default(),
             rng: Rng::new(),
             node_editor: NodeEditor::default(),
@@ -117,6 +106,8 @@ impl WikipediaGraphAppBuilder {
             internet_status,
             language: self.language,
             search_data: SearchData::default(),
+            node_stores: Arc::new(Mutex::new(Vec::new())),
+            test_store: Arc::new(Mutex::new(None)),
         }
     }
 }

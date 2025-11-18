@@ -1,17 +1,11 @@
-use std::alloc::Layout;
-
-use egui::{
-    Color32, Context, DragValue, Frame, Pos2, RichText, ScrollArea, Sense, Slider, TextEdit, Ui,
-    UiBuilder,
-};
+use crate::WikipediaGraphApp;
+use egui::{Color32, Context, DragValue, Frame, RichText, Slider, TextEdit, Ui};
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::MetadataFrame;
 use log::{error, warn};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
-use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
-
-use crate::{InternetStatus, WikipediaGraphApp};
+use wikipedia_graph::{WikipediaGraph, WikipediaPage};
 
 impl WikipediaGraphApp {
     pub fn search_bar(&mut self, ctx: &Context) {
@@ -23,7 +17,7 @@ impl WikipediaGraphApp {
             if !self.search_data.query.is_empty() {
                 let indices = self.graph.node_indicies();
 
-                let pages = self.search_data.search_n_pages(indices, 10);
+                let pages = self.search_data.get_searched_pages(indices);
 
                 for (name, index) in pages {
                     ui.scope(|ui| {
@@ -180,17 +174,7 @@ impl WikipediaGraphApp {
             } else {
                 let index = self.graph.add_node(page);
 
-                let page = self.graph.node_mut(index).unwrap();
-
-                match page.payload_mut().load_page_text(&self.client) {
-                    Ok(_) => {
-                        page.set_label(page.payload().title());
-                    }
-                    Err(e) => {
-                        let payload = page.payload().clone();
-                        error!("Request for {} failed: {e}", self.url_of_page(&payload))
-                    }
-                };
+                self.load_node(index, crate::NodeAction::None);
 
                 index
             };

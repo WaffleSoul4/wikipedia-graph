@@ -1,10 +1,9 @@
 use super::WikipediaClientConfig;
-use crate::WikiLanguage;
 use crate::client::WikipediaClientCommon;
 use crate::page::{LanguageInvalidError, WikipediaBody, WikipediaUrlType};
+use crate::{WikiLanguage, WikipediaPage};
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
-use serde::ser;
 use serde_json::Value;
 use std::fmt::Display;
 #[allow(unused_imports)] // For wasm stuff
@@ -14,12 +13,8 @@ use url::Url;
 #[allow(unused_imports)] // For wasm stuff
 use web_time::{Duration, Instant};
 
-pub trait Callback: 'static + Fn() + Send + Clone {}
-
-impl<T: 'static + Fn() + Send + Clone> Callback for T {}
-
 /// The Errors that may occur with the HTTP client
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum HttpError {
     /// An unknown error with the backend (ehttp)
     #[error("Error with HTTP backend: {0}")]
@@ -42,24 +37,19 @@ pub enum HttpError {
     /// The amount of redirects exceeded [crate::client::CLIENT_REDIRECTS]
     #[error("Too many redirects")]
     TooManyRedirects,
-    /// Inner error type for redirecting, not really an error
-    #[doc(hidden)]
-    #[error("This is solely an inner type used for detecting redirects")]
-    Redirect(String),
+    /// Tell the user to redirect
+    #[error("Please redirect to {0}")]
+    Redirect(String), // Sorry, I'm no longer in control of the redirects anymore
     /// The request returned an unknown response code
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
-    /// The client failed to get the information from the request thread
-    #[error("Failed to sync data containing response")]
-    SyncError,
     /// The client failed to deserialise the response
     #[error("Failed to deserialise response: {0}")]
-    DeserialisationError(#[from] serde_json::Error),
+    DeserialisationError(String), // serde_json::Error doesn't implement Clone
 }
 
 /// A client used for getting Wikipedia pages
 pub struct WikipediaClient {
-    timeout: Option<Duration>,
     language: WikiLanguage,
     headers: http::HeaderMap,
     url_type: WikipediaUrlType,
@@ -99,22 +89,6 @@ impl WikipediaClient {
 
     /// Get the contents of the page 'https://en.wikipedia.org/w/api.php', can be used as a network test
     ///
-    /// # Errors
-    ///
-    /// The method fails if the request fails
-    /// There can only be two reasons for this:
-    ///     - A client side error
-    ///     - Wikipedia is down
-    pub fn get_api_base(&self) -> Result<(), HttpError> {
-        self.get_request(
-            Request::get(format!("https://en.wikipedia.org/w/api.php?origin=*")),
-            || {},
-        )
-        .map(|_| ())
-    }
-
-    /// Get the contents of the page 'https://en.wikipedia.org/w/api.php', can be used as a network test
-    ///
     /// Executes the given callback upon request completion
     ///
     /// # Errors
@@ -123,12 +97,14 @@ impl WikipediaClient {
     /// There can only be two reasons for this:
     ///     - A client side error
     ///     - Wikipedia is down
-    pub fn get_api_base_callback(&self, callback: impl Callback) -> Result<(), HttpError> {
+    pub fn get_api_base(&self, callback: impl Fn(Result<(), HttpError>) + 'static + Send) {
+        let callback =
+            move |result: Result<String, HttpError>| callback(result.map(|_: String| ()));
+
         self.get_request(
             Request::get(format!("https://en.wikipedia.org/w/api.php?origin=*")),
             callback,
         )
-        .map(|_| ())
     }
 
     fn parse_status_code(code: StatusCode, response: Response) -> Result<Response, HttpError> {
@@ -154,13 +130,11 @@ impl WikipediaClient {
     fn get_request(
         &self,
         request: Request,
-        callback_extra: impl Callback,
-    ) -> Result<String, HttpError> {
+        callback: impl Fn(Result<String, HttpError>) + Send + 'static,
+    ) {
         log::info!("Loading page from url '{}'", &request.url);
 
-        let mut redirects = crate::client::CLIENT_REDIRECTS;
-
-        let mut request = request.clone();
+        let mut request = request;
 
         request.headers = Headers {
             headers: self
@@ -178,119 +152,24 @@ impl WikipediaClient {
                 .collect(),
         };
 
-        'redirect_loop: while redirects != 0 {
-            let callback = callback_extra.clone();
+        ehttp::fetch(request, move |response| {
+            let response_processed = response
+                .map_err(|err| HttpError::Backend(err))
+                .and_then(|response| match StatusCode::from_u16(response.status) {
+                    Ok(code) => WikipediaClient::parse_status_code(code, response),
+                    Err(_) => Err(HttpError::Unknown(response.status)),
+                })
+                .and_then(|response: Response| {
+                    response
+                        .text()
+                        .map(|text| text.to_string())
+                        .ok_or(HttpError::NoPageBody)
+                });
 
-            #[cfg(not(target_arch = "wasm32"))]
-            let (response_writer, response_reader) = std::sync::mpsc::channel();
+            log::info!("Running callback... ");
 
-            #[cfg(target_arch = "wasm32")]
-            let response_store: Arc<Mutex<Option<Result<String, HttpError>>>> =
-                Arc::new(Mutex::new(None));
-
-            #[cfg(target_arch = "wasm32")]
-            let response_store_clone = response_store.clone();
-
-            ehttp::fetch(request.clone(), move |response| {
-                let response_processed = response
-                    .map_err(|err| HttpError::Backend(err))
-                    .and_then(|response| match StatusCode::from_u16(response.status) {
-                        Ok(code) => WikipediaClient::parse_status_code(code, response),
-                        Err(_) => Err(HttpError::Unknown(response.status)),
-                    })
-                    .and_then(|response: Response| {
-                        response
-                            .text()
-                            .map(|text| text.to_string())
-                            .ok_or(HttpError::NoPageBody)
-                    });
-
-                callback();
-
-                log::info!("Sending response... ");
-
-                #[cfg(not(target_arch = "wasm32"))]
-                if let Err(e) = response_writer.send(Some(response_processed)) {
-                    panic!("Failed to send response to app: {e}")
-                }
-
-                #[cfg(target_arch = "wasm32")]
-                match response_store_clone.lock() {
-                    Ok(mut t) => *t = Some(response_processed),
-                    Err(e) => panic!("Failed to send response to app: {e}"),
-                }
-            });
-
-            redirects -= 1;
-
-            #[cfg(not(target_arch = "wasm32"))]
-            loop {
-                match response_reader.recv_timeout(self.timeout.unwrap_or(Duration::from_hours(16)))
-                {
-                    Ok(mut t) => match t.take() {
-                        Some(response) => {
-                            log::info!("Response recieved");
-
-                            if let Err(HttpError::Redirect(url)) = response {
-                                request.url = url;
-                                continue 'redirect_loop;
-                            }
-
-                            return response;
-                        }
-                        None => return Err(HttpError::NoPageBody),
-                    },
-                    Err(_) => return Err(HttpError::Timeout),
-                }
-            }
-
-            #[cfg(target_arch = "wasm32")]
-            {
-                let poll_start = Instant::now();
-
-                loop {
-                    while poll_start.elapsed().as_millis() % 1000 != 0 {
-                        log::info!("Blocking!!")
-                    }
-
-                    log::info!("{:?}", response_store);
-
-                    match response_store.lock() {
-                        Ok(mut t) => match t.take() {
-                            Some(response) => {
-                                log::info!("Response recieved");
-
-                                if let Err(HttpError::Redirect(url)) = response {
-                                    request.url = url;
-                                    continue 'redirect_loop;
-                                }
-
-                                return response;
-                            }
-                            None if Instant::now().duration_since(poll_start)
-                                > self.timeout.unwrap_or(Duration::from_hours(24)) =>
-                            {
-                                log::warn!("Request timed out");
-                                return Err(HttpError::Timeout);
-                            }
-                            None => {}
-                        },
-                        Err(_) => return Err(HttpError::SyncError),
-                    }
-                }
-            }
-        }
-
-        Err(HttpError::TooManyRedirects)
-    }
-
-    /// Get the wikipedia page at the specified pathinfo
-    ///
-    /// # Errors
-    ///
-    /// This method fails if the http request failed
-    pub fn get<T: Display>(&self, pathinfo: T) -> Result<WikipediaBody, HttpError> {
-        self.get_callback(pathinfo, || {})
+            callback(response_processed);
+        });
     }
 
     /// Get the wikipedia page at the specified pathinfo
@@ -300,47 +179,23 @@ impl WikipediaClient {
     /// # Errors
     ///
     /// This method fails if the http request failed
-    pub fn get_callback<T: Display>(
+    pub fn get<T: Display>(
         &self,
         pathinfo: T,
-        callback: impl Callback,
-    ) -> Result<WikipediaBody, HttpError> {
+        callback: impl Fn(Result<WikipediaBody, HttpError>) + Send + 'static,
+    ) -> Result<(), LanguageInvalidError> {
         let request = self.request_from_pathinfo(pathinfo, self.url_type)?;
 
-        let response = self.get_request(request, callback);
+        let url_type = self.url_type.clone();
 
-        match self.url_type {
-            WikipediaUrlType::LinksApi => {
-                response.and_then(|response| {
-                    serde_json::from_str::<Value>(&response)
-                        .map(|response| WikipediaBody::Links(response))
-                        .map_err(|err| err.into())
-                })
-            },
-            WikipediaUrlType::RawApi => {
-                response.and_then(|response| {
-                    serde_json::from_str::<Value>(&response)
-                        .map(|response| WikipediaBody::Normal(response))
-                        .map_err(|err| err.into())
-                })
-            },
-            WikipediaUrlType::Normal => {
-                Err(HttpError::DeserialisationError(
-                    <serde_json::Error as ser::Error>::custom(
-                        "Can't deserialize links from the Normal Request Type",
-                    ),
-                )) //TODO: Please fix this
-            }
-        }
-    }
+        self.get_request(request, move |respone| {
+            callback(respone.and_then(|body| {
+                WikipediaBody::from_url_type(url_type, body)
+                    .map_err(|err| HttpError::DeserialisationError(err.to_string()))
+            }))
+        });
 
-    /// Returns the title of a random page using the Wikimedia API
-    ///
-    /// # Errors
-    ///
-    /// This method fails if the request failed
-    pub fn random_title(&self) -> Result<String, HttpError> {
-        self.random_title_callback(|| {})
+        Ok(())
     }
 
     /// returns the title of a random page using the Wikimedia API
@@ -350,7 +205,10 @@ impl WikipediaClient {
     /// # Errors
     ///
     /// This method fails if the request failed
-    pub fn random_title_callback(&self, callback: impl Callback) -> Result<String, HttpError> {
+    pub fn random_page(
+        &self,
+        callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + 'static,
+    ) -> Result<(), LanguageInvalidError> {
         let mut base_url = WikipediaUrlType::LinksApi.base_url(self.language)?;
 
         base_url.set_query(Some(
@@ -359,26 +217,32 @@ impl WikipediaClient {
 
         let request = Request::get(base_url);
 
-        let deserialized: Value =
-            serde_json::from_str(self.get_request(request, callback)?.as_str())?;
+        let callback = move |response: Result<String, HttpError>| {
+            callback(response.and_then(|body| {
+                serde_json::from_str::<Value>(body.as_str())
+                    .map_err(|err| HttpError::DeserialisationError(err.to_string()))?
+                    .get("query")
+                    .and_then(|val| val.get("random"))
+                    .and_then(|val| val.as_array())
+                    .and_then(|data| {
+                        data.get(0)
+                            .and_then(|data| data.get("title"))
+                            .and_then(|title| title.as_str())
+                            .map(|title| title.to_string())
+                    })
+                    .ok_or(HttpError::NoPageBody)
+                    .map(WikipediaPage::from_title)
+            }));
+        };
 
-        deserialized // Completely readable code!!
-            .get("query")
-            .and_then(|val| val.get("random"))
-            .and_then(|val| val.as_array())
-            .and_then(|data| {
-                data.get(0)
-                    .and_then(|data| data.get("title"))
-                    .and_then(|title| title.as_str())
-                    .map(|title| title.to_string())
-            })
-            .ok_or(HttpError::NoPageBody)
+        self.get_request(request, callback);
+
+        Ok(())
     }
 
     /// Create a [WikipediaClient] from a [WikipediaClientConfig]
     pub fn from_config(config: WikipediaClientConfig) -> Self {
         WikipediaClient {
-            timeout: config.timeout,
             language: config.language,
             headers: config.headers,
             url_type: config.url_type,

@@ -13,7 +13,7 @@ pub fn multekrem_page() -> WikipediaPage {
     assert!(!page_text.is_empty(), "Failed to load multekrem page");
 
     page.set_page_body(
-        wikipedia_graph::WikipediaBody::normal_from_text(&page_text)
+        wikipedia_graph::WikipediaBody::wikitext_from_text(&page_text)
             .expect("Failed to parse multekrem page"),
     );
 

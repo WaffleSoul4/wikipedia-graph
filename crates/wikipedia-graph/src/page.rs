@@ -17,7 +17,7 @@ pub struct WikipediaPage {
 }
 
 /// An error that may occur when a language has no iso 639-1 representation
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[error("Language has no valid iso 639-1 representation")]
 pub struct LanguageInvalidError;
 
@@ -45,9 +45,16 @@ pub enum WikipediaUrlError {
     InvalidURL(#[from] url::ParseError),
 }
 
+/// The body of a Wikipedia page. The two current supported formats are the wikitext and links, both stored as JSON values.
 #[derive(Clone, Debug)]
 pub enum WikipediaBody {
-    Normal(serde_json::Value),
+    /// The (wikitext)[https://en.wikipedia.org/wiki/Help:Wikitext] of a page, stored in a thin layer of JSON
+    /// 
+    /// The wikitext JSON comes from this api call: <https://en.wikipedia.org/w/api.php?origin=*&action=parse&prop=wikitext&format=json&page=Waffle>
+    WikiText(serde_json::Value),
+    /// The links of a page, stored in a thin layer of JSON
+    /// 
+    /// The links JSON comes from this api call: <>
     Links(serde_json::Value),
 }
 
@@ -57,10 +64,15 @@ impl WikipediaBody {
         "Wayback Machine", // Almost all sources are linked to through the wayback machine
     ];
 
-    pub fn normal_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {
-        serde_json::from_str(text).map(|val| WikipediaBody::Normal(val))
+    const PAGE_TEXT_REGEX: &lazy_regex::Lazy<Regex> =
+        lazy_regex::regex!(r#"\[\[([a-zA-Z0-9 \(\)]+)(?:[|][a-zA-Z0-9 \(\)]+)?\]\]"#);
+
+    /// Serialize the JSON from a wikitext response and wrap it
+    pub fn wikitext_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {
+        serde_json::from_str(text).map(|val| WikipediaBody::WikiText(val))
     }
 
+    /// Serialize the JSON from a links response and wrap it
     pub fn links_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {
         serde_json::from_str(text).map(|val| WikipediaBody::Links(val))
     }
@@ -70,82 +82,138 @@ impl WikipediaBody {
     /// Output is either JSON or HTML
     pub fn to_string(self) -> String {
         match self {
-            Self::Normal(t) => t.to_string(),
+            Self::WikiText(t) => t.to_string(),
             Self::Links(t) => t.to_string(),
         }
     }
 
+    /// Tries to create a [WikipediaBody] from text and the url type
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails if the serialisation of the text fails or the type of the URL is Basic
+    pub fn from_url_type(
+        url_type: WikipediaUrlType,
+        body: String,
+    ) -> Result<WikipediaBody, serde_json::Error> {
+        match url_type {
+            WikipediaUrlType::LinksApi => {
+                serde_json::from_str::<Value>(&body).map(|response| WikipediaBody::Links(response))
+            }
+            WikipediaUrlType::RawApi => serde_json::from_str::<Value>(&body)
+                .map(|response| WikipediaBody::WikiText(response))
+                .map_err(|err| err.into()),
+            WikipediaUrlType::Basic => {
+                Err(<serde_json::Error as serde::de::Error>::custom(
+                    "Can't deserialize links from the Normal Request Type",
+                )) //TODO: Please fix this
+            }
+        }
+    }
+
+    /// Get the pathinfo of a page from its body
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails if the 'title' field is not available in the deserialised JSON
     pub fn get_pathinfo(&self) -> Result<String, PathinfoParseError> {
         match self {
-            WikipediaBody::Normal(_) => Err(PathinfoParseError),
+            WikipediaBody::WikiText(_) => Err(PathinfoParseError),
             WikipediaBody::Links(links) => Self::get_pathinfo_from_links(&links),
         }
     }
 
-    fn get_pathinfo_from_links(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
+    /// Get the pathinfo of a page stored with links
+    /// 
+    /// The pattern to access the title is `{query: {pages: {title: "Title"}}}`
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails if the 'title' field is not available in the deserialized JSON
+    pub fn get_pathinfo_from_links(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
         data.get("query")
             .and_then(|query| query.get("pages")?.as_object()?.iter().next())
             .map(|(_, value)| value)
             .and_then(|value| value.get("title")?.as_str())
-            .map(|title| dbg!(title.to_string()))
+            .map(|title| title.to_string())
             .ok_or(PathinfoParseError)
     }
 
-    pub fn get_linked_pages(&self) -> Vec<WikipediaPage> {
+    /// Get the pathinfo of a page stored with wikitext
+    /// 
+    /// The structure to access the title is `{parse: {title: "Title"}}`
+    /// 
+    /// # Errors
+    /// 
+    /// This method fails if the 'title' field is not available in the deserialized JSON
+    pub fn get_pathinfo_from_wikitext(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
+        data.get("parse")
+            .and_then(|value| value.get("title")?.as_str())
+            .map(|title| title.to_string())
+            .ok_or(PathinfoParseError)
+    }
+
+    /// Get the linked pages of the body
+    /// 
+    /// Returns [None] if the recieved JSON is invalid
+    pub fn get_linked_pages(&self) -> Option<Box<dyn Iterator<Item = WikipediaPage> + '_>> {
         match self {
-            WikipediaBody::Normal(t) => Self::get_linked_pages_from_page_text(t),
-            WikipediaBody::Links(t) => Self::get_linked_pages_from_links(t),
+            WikipediaBody::WikiText(t) => Some(Box::new(Self::get_linked_pages_from_wikitext(t)?)),
+            WikipediaBody::Links(t) => Some(Box::new(Self::get_linked_pages_from_links(t)?)),
         }
     }
 
-    fn get_linked_pages_from_links(data: &serde_json::Value) -> Vec<WikipediaPage> {
-        data.get("query")
+    /// Get the linked pages of a body in links format
+    /// 
+    /// The pattern to access the linked pages is `{query: {pages: {links: [{title: "Title"}]}}}``
+    /// 
+    /// Returns [None] if the recieved JSON is invalid
+    pub fn get_linked_pages_from_links(
+        value: &serde_json::Value,
+    ) -> Option<impl Iterator<Item = WikipediaPage>> {
+        value
+            .get("query")
             .and_then(|query| query.get("pages")?.as_object()?.iter().next())
             .map(|(_, value)| value)
             .and_then(|data| data.get("links")?.as_array())
             .map(|links| {
-                links
-                    .iter()
-                    .filter_map(|link| {
-                        Some(WikipediaPage::from_title(link.get("title")?.as_str()?))
-                    })
-                    .collect()
+                links.iter().filter_map(|link| {
+                    Some(WikipediaPage::from_title(link.get("title")?.as_str()?))
+                })
             })
-            .unwrap_or_default()
     }
 
-    fn get_linked_pages_from_page_text(value: &Value) -> Vec<WikipediaPage> {
-        let page_text = match value
+    /// Get the linked pages of a body in (wikitext)[https://en.wikipedia.org/wiki/Help:Wikitext] format
+    /// 
+    /// The pattern to access the wikitext pages is `{parse: {wikitext: "wikitext"}}`
+    /// 
+    /// Returns [None] if the recieved JSON is invalid
+    pub fn get_linked_pages_from_wikitext(
+        value: &Value,
+    ) -> Option<impl Iterator<Item = WikipediaPage>> {
+        let page_text = value
             .get("parse")
             .and_then(|parse| parse.get("wikitext"))
-            .and_then(|wikitext| wikitext.as_object()?.iter().next()?.1.as_str())
-        {
-            Some(t) => t,
-            None => return Vec::new(),
-        };
+            .and_then(|wikitext| wikitext.as_object()?.iter().next()?.1.as_str())?;
 
-        let regex = Regex::new(
-            r#"\[\[([a-zA-Z0-9 \(\)]+)(?:[|][a-zA-Z0-9 \(\)]+)?\]\]"#, // Don't ask
+        Some(
+            Self::PAGE_TEXT_REGEX
+                .captures_iter(&page_text)
+                .map(|capture| capture.extract::<1>())
+                .unique_by(|capture_data| capture_data.1[0])
+                .filter(|capture_data| {
+                    Self::FILTERED_PAGES
+                        .iter()
+                        .all(|page| !capture_data.0.contains(page))
+                })
+                .map(|capture_data| WikipediaPage::from_title(capture_data.1[0])),
         )
-        .expect("Failed to compile regex to find linked pages");
-
-        regex
-            .captures_iter(&page_text)
-            .map(|capture| capture.extract::<1>())
-            .unique_by(|capture_data| capture_data.1[0])
-            .filter(|capture_data| {
-                Self::FILTERED_PAGES
-                    .iter()
-                    .all(|page| !capture_data.0.contains(page))
-            })
-            .map(|capture_data| WikipediaPage::from_title(capture_data.1[0]))
-            .collect()
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum WikipediaUrlType {
-    Normal,
+    Basic,
     RawApi,
     LinksApi,
 }
@@ -153,7 +221,7 @@ pub enum WikipediaUrlType {
 impl WikipediaUrlType {
     pub fn base_url(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
         Ok(match self {
-            Self::Normal => Url::parse(
+            Self::Basic => Url::parse(
                 format!(
                     "https://{}.wikipedia.org/wiki/",
                     language.as_code_wiki().ok_or(LanguageInvalidError)?
@@ -190,7 +258,7 @@ impl WikipediaUrlType {
         pathinfo: &String,
     ) -> Result<Url, LanguageInvalidError> {
         match self {
-            WikipediaUrlType::Normal => Ok(self.base_url(language)?.join(&pathinfo).expect(
+            WikipediaUrlType::Basic => Ok(self.base_url(language)?.join(&pathinfo).expect(
                 format!(
                     "Wikipedia URL for '{}' with language '{:?}' parsing failed",
                     pathinfo, language
@@ -257,6 +325,14 @@ impl WikipediaPage {
         self
     }
 
+    /// Override the body of a wikipedia page
+    pub fn with_body(self, body: WikipediaBody) -> Self {
+        Self {
+            body: Some(body),
+            ..self
+        }
+    }
+
     /// Check if the page text is loaded
     pub fn is_page_text_loaded(&self) -> bool {
         self.body.is_some()
@@ -269,7 +345,7 @@ impl WikipediaPage {
 
     /// Get the url of the wikipedia page with a certain language
     pub fn url_with_lang(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
-        WikipediaUrlType::Normal.url_with(language, &self.pathinfo)
+        WikipediaUrlType::Basic.url_with(language, &self.pathinfo)
     }
 
     /// Create a new WikipediaPage from the title
@@ -322,24 +398,17 @@ impl WikipediaPage {
             })
     }
 
+    /// Try to get the stored body of the page
+    ///
+    /// # Errors
+    ///
+    /// This method fails if the request for the page data fails
+    pub fn try_get_body(&self) -> &Option<WikipediaBody> {
+        &self.body
+    }
+
     cfg_if::cfg_if! {
         if #[cfg(feature = "client")] {
-            // Does not load the body into memory
-
-            /// Get the text of the page without loading into memory, or retrieve it from memory
-            ///
-            /// *This method requires the `client` feature*
-            ///
-            /// # Errors
-            ///
-            /// This method fails if the request for the page data fails
-            pub fn get_page_body(&self, client: &WikipediaClient) -> Result<WikipediaBody, HttpError> {
-                match &self.body {
-                    Some(t) => Ok(t.clone()),
-                    _ => client.get(self.pathinfo.clone()),
-                }
-            }
-
             /// Get a random and unloaded page from the wikimedia API
             ///
             /// *This method requires the `client` feature*
@@ -347,35 +416,8 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for a random page fails
-            pub fn random(client: &WikipediaClient) -> Result<Self, HttpError> {
-                client.random_title().map(|result| Self::from_title(result))
-            }
-
-            // Load the page text from the internet no matter what
-
-            /// Load the page text and store it in memory
-            ///
-            /// *This method requires the `client` feature*
-            ///
-            /// # Errors
-            ///
-            /// This method fails if the request for the page data fails
-            pub fn force_load_page_text(
-                &mut self,
-                client: &WikipediaClient,
-            ) -> Result<&mut Self, HttpError> {
-                let page_body = client.get(self.pathinfo.clone())?;
-
-                let pathinfo_new = page_body.get_pathinfo();
-
-                self.body = Some(page_body);
-
-                match pathinfo_new {
-                    Ok(pathinfo) => self.pathinfo = pathinfo,
-                    Err(e) => log::error!("{e}"),
-                }
-
-                Ok(self)
+            pub fn random(client: &WikipediaClient, callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + 'static) -> Result<(), LanguageInvalidError>  {
+                client.random_page(callback)
             }
 
             /// Load the page text if it is not already stored in memory
@@ -385,12 +427,11 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for the page data fails
-            pub fn load_page_text(&mut self, client: &WikipediaClient) -> Result<&mut Self, HttpError> {
-                let text = self.get_page_body(client)?;
+            pub fn load_page_text(&self, client: &WikipediaClient, callback: impl Fn(Result<Self, HttpError>) + Send + 'static) -> Result<(), LanguageInvalidError> {
+                let title = self.title();
 
-                self.body = Some(text);
-
-                Ok(self)
+                client
+                    .get(self.pathinfo.clone(), move |response| callback(response.map(|body| WikipediaPage::from_title(title.clone()).with_body(body))))
             }
         }
     }
@@ -415,8 +456,8 @@ impl WikipediaPage {
     }
 
     /// Get all the pages that this page links to if the page text is loaded
-    pub fn try_get_linked_pages(&self) -> Option<Vec<WikipediaPage>> {
-        self.body.as_ref().map(|body| body.get_linked_pages())
+    pub fn try_get_linked_pages(&self) -> Option<Box<dyn Iterator<Item = WikipediaPage> + '_>> {
+        self.body.as_ref().map(|body| body.get_linked_pages())?
     }
 }
 

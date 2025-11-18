@@ -16,7 +16,6 @@ impl<Index: IndexType> WikipediaGraph<NodeIndex<Index>>
     }
 
     fn add_edge(&mut self, from: NodeIndex<Index>, to: NodeIndex<Index>) {
-        // I hate when it's like "edge #21342353232"
         self.add_edge_with_label(from, to, (), String::new());
     }
 

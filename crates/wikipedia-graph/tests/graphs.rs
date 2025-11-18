@@ -6,7 +6,7 @@ mod petgraph {
     use crate::common::{self, NUM_LINKED_MULTEKREM_PAGES, multekrem_page};
     use petgraph::prelude::StableDiGraph;
     use pretty_assertions::assert_eq;
-    use wikipedia_graph::{WikipediaClient, WikipediaGraph, WikipediaPage};
+    use wikipedia_graph::{WikipediaGraph, WikipediaPage};
 
     #[test]
     fn expand_nodes() {
@@ -15,11 +15,7 @@ mod petgraph {
 
         let multekrem_index = graph.add_node(multekrem_page());
 
-        let connected = graph
-            .try_expand_node(multekrem_index, &WikipediaClient::default())
-            .expect("")
-            .expect("Multekrem node does not exist");
-
+        let connected = graph.try_expand_node(multekrem_index).expect("");
         connected
             .iter()
             .map(|idx| {
@@ -38,24 +34,20 @@ mod petgraph {
 
     #[test]
     fn double_expand_nodes() {
-        let client = WikipediaClient::default();
-
         let mut graph_1: StableDiGraph<WikipediaPage, ()> =
             petgraph::stable_graph::StableDiGraph::default();
 
         let multekrem_index = graph_1.add_node(multekrem_page());
 
         let connected_1 = graph_1
-            .try_expand_node(multekrem_index, &client)
-            .expect("If this happens, just use a different crate")
-            .expect("Multekrem node does not exist");
+            .try_expand_node(multekrem_index)
+            .expect("Failed to find node to expand");
 
         let mut graph_2 = graph_1.clone();
 
         let connected_2 = graph_2
-            .try_expand_node(multekrem_index, &client)
-            .expect("If this happens, just use a different crate")
-            .expect("Multekrem node does not exist");
+            .try_expand_node(multekrem_index)
+            .expect("Failed to find node to expand");
 
         assert_eq!(connected_1.len(), NUM_LINKED_MULTEKREM_PAGES);
 

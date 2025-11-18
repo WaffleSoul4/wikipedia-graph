@@ -12,11 +12,16 @@
 //! # Example
 //! ```no_run
 //! # use wikipedia_graph::{HttpError, WikipediaPage, WikipediaClient};
-//! # fn main() -> Result<(), HttpError> {
+//! # use std::sync::mpsc::*;
+//! # fn main() -> Result< (), Box<dyn std::error::Error>> {
 //! let mut page = WikipediaPage::from_title("Waffle");
 //! let client = WikipediaClient::default();
 //!
-//! page.load_page_text(&client);
+//! let (response_sender, response_reciever) = channel::<Result<WikipediaPage, HttpError>>();
+//!
+//! page.load_page_text(&client, move |response| response_sender.send(response).expect("Failed to send response to main thread"));
+//!
+//! page = response_reciever.recv()??;
 //!
 //! println!("Page title: {}", page.title());
 //!
@@ -53,7 +58,7 @@ cfg_if::cfg_if! {
 cfg_if::cfg_if! {
     if #[cfg(feature = "graphs")] {
 
-        pub use graph::{WikipediaGraph, IndexType};
+        pub use graph::{WikipediaGraph, DefaultIndexType};
     }
 }
 

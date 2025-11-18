@@ -1,5 +1,5 @@
 use eframe::{NativeOptions, run_native};
-use wikipedia_egui_graph::{WikipediaGraphApp, builder::WikipediaGraphAppBuilder};
+use wikipedia_egui_graph::{builder::WikipediaGraphAppBuilder};
 use wikipedia_graph::WikiLanguage;
 
 fn main() {
