@@ -1,11 +1,17 @@
 use crate::WikipediaGraphApp;
-use egui::{Color32, Context, DragValue, Frame, RichText, Slider, TextEdit, Ui};
+use egui::{CollapsingHeader, Color32, Context, DragValue, Frame, RichText, Slider, TextEdit, Ui};
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::MetadataFrame;
 use log::{error, warn};
 use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use wikipedia_graph::{WikipediaGraph, WikipediaPage};
+
+// Code from egui graphs
+fn info_icon(ui: &mut egui::Ui, tip: &str) {
+    ui.add_space(4.0);
+    ui.small_button("ℹ").on_hover_text(tip);
+}
 
 impl WikipediaGraphApp {
     pub fn search_bar(&mut self, ctx: &Context) {
@@ -86,14 +92,72 @@ impl WikipediaGraphApp {
     pub fn layout_settings(&mut self, ui: &mut Ui) {
         let layout_settings = &mut self.layout_settings;
 
-        ui.add(Slider::new(&mut layout_settings.c_attract, 0.0..=10.0).text("Attraction"));
-        ui.add(Slider::new(&mut layout_settings.c_repulse, 0.0..=10.0).text("Repulsion"));
-        ui.add(Slider::new(&mut layout_settings.damping, 0.0..=10.0).text("Damping"));
-        ui.add(Slider::new(&mut layout_settings.epsilon, 0.0..=10.0).text("Epsilon"));
-        ui.add(Slider::new(&mut layout_settings.k_scale, 0.0..=10.0).text("Scale"));
-        ui.add(Slider::new(&mut layout_settings.dt, 0.0..=10.0).text("dt"));
-        ui.add(Slider::new(&mut layout_settings.max_step, 0.0..=50.0).text("Max step"));
-        ui.checkbox(&mut layout_settings.is_running, "is running");
+        CollapsingHeader::new("Animation")
+            .default_open(true)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut layout_settings.is_running, "running");
+                    info_icon(
+                        ui,
+                        "Run/pause the simulation. When paused node positions stay fixed.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut layout_settings.dt, 0.001..=0.2).text("dt"));
+                    info_icon(
+                        ui,
+                        "Integration time step (Euler). Larger = faster movement but less stable.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Slider::new(&mut layout_settings.damping, 0.0..=1.0).text("damping"),
+                    );
+                    info_icon(
+                        ui,
+                        "Velocity damping per frame. 1 = no damping, 0 = immediate stop.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Slider::new(&mut layout_settings.max_step, 0.1..=50.0)
+                            .text("max_step"),
+                    );
+                    info_icon(
+                        ui,
+                        "Maximum pixel displacement applied per frame to prevent explosions.",
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::Slider::new(&mut layout_settings.epsilon, 1e-5..=1e-1)
+                            .logarithmic(true)
+                            .text("epsilon"),
+                    );
+                    info_icon(
+                        ui,
+                        "Minimum distance clamp to avoid division by zero in force calculations.",
+                    );
+                });
+
+                ui.add_space(4.0);
+            });
+
+        // Forces section
+        CollapsingHeader::new("Forces").default_open(true).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut layout_settings.k_scale, 0.2..=3.0).text("k_scale"));
+                    info_icon(ui, "Scale ideal edge length k; >1 spreads the layout, <1 compacts it.");
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut layout_settings.c_attract, 0.1..=3.0).text("c_attract"));
+                    info_icon(ui, "Multiplier for attractive force along edges (higher pulls connected nodes together).");
+                });
+                ui.horizontal(|ui| {
+                    ui.add(egui::Slider::new(&mut layout_settings.c_repulse, 0.1..=3.0).text("c_repulse"));
+                    info_icon(ui, "Multiplier for repulsive force between nodes (higher pushes nodes apart).");
+                });
+            });
     }
 
     pub fn control_settings(&mut self, ui: &mut Ui) {

@@ -47,10 +47,7 @@ impl WikipediaClientConfig {
     /// # Errors
     ///
     /// This method fails whenever invalid headers are provided
-    pub fn new(
-        headers: HashMap<&str, &str>,
-        language: WikiLanguage,
-    ) -> Result<Self, HeaderError> {
+    pub fn new(headers: HashMap<&str, &str>, language: WikiLanguage) -> Result<Self, HeaderError> {
         let without_headers = Self::default().language(language);
 
         headers

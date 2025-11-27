@@ -49,11 +49,11 @@ pub enum WikipediaUrlError {
 #[derive(Clone, Debug)]
 pub enum WikipediaBody {
     /// The (wikitext)[https://en.wikipedia.org/wiki/Help:Wikitext] of a page, stored in a thin layer of JSON
-    /// 
+    ///
     /// The wikitext JSON comes from this api call: <https://en.wikipedia.org/w/api.php?origin=*&action=parse&prop=wikitext&format=json&page=Waffle>
     WikiText(serde_json::Value),
     /// The links of a page, stored in a thin layer of JSON
-    /// 
+    ///
     /// The links JSON comes from this api call: <>
     Links(serde_json::Value),
 }
@@ -88,9 +88,9 @@ impl WikipediaBody {
     }
 
     /// Tries to create a [WikipediaBody] from text and the url type
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails if the serialisation of the text fails or the type of the URL is Basic
     pub fn from_url_type(
         url_type: WikipediaUrlType,
@@ -112,9 +112,9 @@ impl WikipediaBody {
     }
 
     /// Get the pathinfo of a page from its body
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails if the 'title' field is not available in the deserialised JSON
     pub fn get_pathinfo(&self) -> Result<String, PathinfoParseError> {
         match self {
@@ -124,11 +124,11 @@ impl WikipediaBody {
     }
 
     /// Get the pathinfo of a page stored with links
-    /// 
+    ///
     /// The pattern to access the title is `{query: {pages: {title: "Title"}}}`
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails if the 'title' field is not available in the deserialized JSON
     pub fn get_pathinfo_from_links(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
         data.get("query")
@@ -140,13 +140,15 @@ impl WikipediaBody {
     }
 
     /// Get the pathinfo of a page stored with wikitext
-    /// 
+    ///
     /// The structure to access the title is `{parse: {title: "Title"}}`
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// This method fails if the 'title' field is not available in the deserialized JSON
-    pub fn get_pathinfo_from_wikitext(data: &serde_json::Value) -> Result<String, PathinfoParseError> {
+    pub fn get_pathinfo_from_wikitext(
+        data: &serde_json::Value,
+    ) -> Result<String, PathinfoParseError> {
         data.get("parse")
             .and_then(|value| value.get("title")?.as_str())
             .map(|title| title.to_string())
@@ -154,7 +156,7 @@ impl WikipediaBody {
     }
 
     /// Get the linked pages of the body
-    /// 
+    ///
     /// Returns [None] if the recieved JSON is invalid
     pub fn get_linked_pages(&self) -> Option<Box<dyn Iterator<Item = WikipediaPage> + '_>> {
         match self {
@@ -164,9 +166,9 @@ impl WikipediaBody {
     }
 
     /// Get the linked pages of a body in links format
-    /// 
+    ///
     /// The pattern to access the linked pages is `{query: {pages: {links: [{title: "Title"}]}}}``
-    /// 
+    ///
     /// Returns [None] if the recieved JSON is invalid
     pub fn get_linked_pages_from_links(
         value: &serde_json::Value,
@@ -184,9 +186,9 @@ impl WikipediaBody {
     }
 
     /// Get the linked pages of a body in (wikitext)[https://en.wikipedia.org/wiki/Help:Wikitext] format
-    /// 
+    ///
     /// The pattern to access the wikitext pages is `{parse: {wikitext: "wikitext"}}`
-    /// 
+    ///
     /// Returns [None] if the recieved JSON is invalid
     pub fn get_linked_pages_from_wikitext(
         value: &Value,

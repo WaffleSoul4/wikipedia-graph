@@ -3,7 +3,7 @@ mod ui;
 
 use crate::builder::WikipediaGraphAppBuilder;
 use eframe::{App, CreationContext};
-use egui::{Context, Pos2, Ui, Vec2};
+use egui::{CollapsingHeader, Context, Pos2, Ui, Vec2};
 use egui_graphs::{
     FruchtermanReingoldWithCenterGravity, FruchtermanReingoldWithCenterGravityState, Graph,
     GraphView, LayoutForceDirected, MetadataFrame, SettingsInteraction, SettingsNavigation,
@@ -651,11 +651,22 @@ impl App for WikipediaGraphApp {
                     .min_width(300.0)
                     .show(ctx, |ui| {
                         self.perf(ui);
-                        ui.collapsing("Layout Settings", |ui| self.layout_settings(ui));
-                        ui.collapsing("Control Settings", |ui| self.control_settings(ui));
-                        ui.collapsing("Random Controls", |ui| self.random_controls(ui));
-                        ui.collapsing("Node Controls", |ui| self.node_editor(ui));
-                        ui.collapsing("Style Settings", |ui| self.style_settings(ui));
+                        ui.separator();
+                        CollapsingHeader::new("Layout Settings")
+                            .default_open(true)
+                            .show(ui, |ui| self.layout_settings(ui));
+                        CollapsingHeader::new("Controls")
+                            .default_open(true)
+                            .show(ui, |ui| self.control_settings(ui));
+                        CollapsingHeader::new("Node Settings")
+                            .default_open(true)
+                            .show(ui, |ui| {
+                                self.node_editor(ui);
+                                self.random_controls(ui);
+                            });
+                        CollapsingHeader::new("Style")
+                            .default_open(true)
+                            .show(ui, |ui| self.style_settings(ui));
                     });
 
                 if let Some(node_index) = self.selected_node {
