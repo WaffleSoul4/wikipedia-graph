@@ -1,4 +1,4 @@
 /target
 /Cargo.lock
-/crates/wikipedia-graph-web/dist
+/crates/wikipedia-graph-web/server
 /crates/wikimedia-language-codegen/output

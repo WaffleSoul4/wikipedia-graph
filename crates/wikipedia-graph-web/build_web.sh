@@ -36,10 +36,16 @@ while test $# -gt 0; do
   esac
 done
 
-FINAL_WASM_PATH="./wikipedia_graph_web_bg.wasm"
+SERVER_DIRECTORY="./server"
 
-# Clear output from old stuff:
-rm -f "${FINAL_WASM_PATH}"
+# Clear the server
+rm -rf $SERVER_DIRECTORY
+
+mkdir $SERVER_DIRECTORY
+
+cp index.html  $SERVER_DIRECTORY
+
+FINAL_WASM_PATH="$SERVER_DIRECTORY/wikipedia_graph_web_bg.wasm"
 
 echo "Building rust…"
 
@@ -48,12 +54,11 @@ cargo build \
   --lib \
   --target wasm32-unknown-unknown
 
-
 echo "Generating JS bindings for wasm…"
 
 TARGET_NAME="wikipedia_graph_web.wasm"
 wasm-bindgen "../../target/wasm32-unknown-unknown/$BUILD/$TARGET_NAME" \
-  --out-dir . --no-modules --no-typescript
+  --out-dir $SERVER_DIRECTORY --no-modules --no-typescript
 
 if [[ "${OPTIMIZE}" = true ]]; then
   echo "Optimizing wasm…"
