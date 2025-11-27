@@ -44,7 +44,7 @@ impl WikipediaGraphApp {
                                 let label = ui.label(name);
 
                                 if label.clicked() {
-                                    self.selected_node = Some(index)
+                                    self.set_selected_node(Some(index))
                                 }
                             });
                     });
@@ -215,13 +215,13 @@ impl WikipediaGraphApp {
     }
 
     pub fn node_editor(&mut self, ui: &mut Ui) {
-        let node_editor = &mut self.node_editor;
-
         if ui.button("Clear all nodes").clicked() {
-            self.graph.g_mut().clear();
+            self.set_selected_node(None);
 
-            self.selected_node = None;
+            self.graph.g_mut().clear();
         }
+
+        let node_editor = &mut self.node_editor;
 
         ui.add(
             TextEdit::singleline(&mut node_editor.page_title).hint_text("Enter page title here"),
@@ -243,7 +243,7 @@ impl WikipediaGraphApp {
                 index
             };
 
-            self.selected_node = Some(index);
+            self.set_selected_node(Some(index));
         }
     }
 
@@ -364,7 +364,7 @@ impl WikipediaGraphApp {
         index: NodeIndex,
         direction: petgraph::EdgeDirection,
     ) {
-        let _ = Self::connected_nodes(&self.graph, index, direction)
+        let select_index = Self::connected_nodes(&self.graph, index, direction)
             .flat_map(|connected_index| {
                 let node_data = self
                     .graph
@@ -377,13 +377,21 @@ impl WikipediaGraphApp {
 
                 node_data
             })
-            .for_each(|(label, connected_index)| {
-                ui.collapsing(label, |ui| {
-                    if ui.button("Select node").clicked() {
-                        self.selected_node = Some(connected_index)
-                    }
-                });
-            });
+            .filter_map(|(label, connected_index)| {
+                if ui
+                    .collapsing(label, |ui| ui.button("Select node").clicked())
+                    .body_returned?
+                {
+                    Some(connected_index.clone())
+                } else {
+                    None
+                }
+            })
+            .next();
+
+        if let Some(index) = select_index {
+            self.set_selected_node(Some(index));
+        }
     }
 
     pub fn internet_unavailable_ui(ui: &mut Ui, remaining_seconds: f32, error: String) -> bool {

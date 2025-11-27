@@ -59,7 +59,6 @@ pub struct WikipediaGraphApp {
     pub event_buffer: std::rc::Rc<std::cell::RefCell<Vec<Event>>>,
     pub client: WikipediaClient,
     pub frame_counter: FrameCounter,
-    pub selected_node: Option<NodeIndex>,
     pub control_settings: ControlSettings,
     pub rng: Rng,
     pub node_editor: NodeEditor,
@@ -448,10 +447,10 @@ impl WikipediaGraphApp {
     }
 
     fn focus_selected(&self, ui: &mut Ui) {
-        if let Some(selected_node) = self.selected_node {
+        if let Some(selected_node) = self.selected_node() {
             let mut meta = MetadataFrame::new(None).load(ui);
 
-            self.focused_node_from_meta(ui, &mut meta, selected_node);
+            self.focused_node_from_meta(ui, &mut meta, selected_node.clone());
 
             meta.save(ui);
         }
@@ -471,31 +470,53 @@ impl WikipediaGraphApp {
         meta.pan = pos;
     }
 
+    fn selected_node(&self) -> Option<&NodeIndex> {
+        self.graph.selected_nodes().get(0)
+    }
+
+    fn set_selected_node(&mut self, index: Option<NodeIndex>) {
+        // Deselect the previously selected node
+        if let Some(index) = self.selected_node() {
+            match self.graph.node_mut(index.clone()) {
+                Some(node) => node.set_selected(false),
+                None => warn!("Previously selected node does not exist"),
+            }
+        }
+
+        if let Some(index) = index {
+            match self.graph.node_mut(index) {
+                Some(node) => node.set_selected(true),
+                None => warn!("Failed to set the selected node: node doesn't exist"),
+            }
+        }
+    }
+
     fn select_random(&mut self) {
-        let count = self.graph.node_count();
-
-        let node_index = self.rng.usize(0..count);
-
-        self.selected_node = Some(NodeIndex::new(node_index))
+        match self
+            .rng
+            .choice(self.graph.node_indicies().iter().map(|(_, index)| index))
+        {
+            Some(index) => self.set_selected_node(Some(index.clone())),
+            None => warn!("Failed to select a random node"),
+        }
     }
 
     fn expand_random(&mut self) {
         self.select_random();
-
-        let selected = self.selected_node.unwrap();
-
-        self.expand_node(selected);
+        match self.selected_node() {
+            Some(index) => self.expand_node(index.clone()),
+            None => warn!("Failed to expand random node: no node was preselected"),
+        }
     }
 
     fn remove_selected(&mut self) {
-        if let Some(selected) = self.selected_node {
-            self.remove_node(selected);
+        if let Some(selected) = self.selected_node() {
+            self.remove_node(selected.clone());
+            self.set_selected_node(None);
         }
     }
 
     fn remove_node(&mut self, index: NodeIndex) {
-        self.selected_node = None;
-
         self.graph.remove_node(index);
     }
 
@@ -542,6 +563,8 @@ impl WikipediaGraphApp {
 
 impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
+        dbg!(self.graph.selected_nodes());
+
         match &self
             .internet_status
             .update(&self.client, self.test_store.clone())
@@ -586,15 +609,13 @@ impl App for WikipediaGraphApp {
                     if let Some(event) = event {
                         match event {
                             Event::NodeClick(event) => {
-                                self.selected_node = Some(NodeIndex::new(event.id))
+                                self.set_selected_node(Some(NodeIndex::new(event.id)))
                             }
                             Event::NodeDoubleClick(event) => {
                                 let parent_index = NodeIndex::new(event.id);
 
                                 self.load_node(parent_index, NodeAction::Expand);
                             }
-                            // Event::Pan(pan) => self.pan = pan.new_pan,
-                            // Event::Zoom(zoom) => self.zoom = zoom.new_zoom,
                             _ => {}
                         }
                     }
@@ -669,12 +690,14 @@ impl App for WikipediaGraphApp {
                             .show(ui, |ui| self.style_settings(ui));
                     });
 
-                if let Some(node_index) = self.selected_node {
+                if let Some(node_index) = self.selected_node() {
+                    let selected = node_index.clone();
+
                     egui::SidePanel::left("left")
                         .default_width(200.0)
                         .min_width(200.0)
                         .show(ctx, |ui| {
-                            self.node_details_ui(ui, node_index);
+                            self.node_details_ui(ui, selected);
                         });
                 }
             }

@@ -97,7 +97,6 @@ impl WikipediaGraphAppBuilder {
             event_buffer,
             client,
             frame_counter: FrameCounter::default(),
-            selected_node: None,
             control_settings: ControlSettings::default(),
             rng: Rng::new(),
             node_editor: NodeEditor::default(),
