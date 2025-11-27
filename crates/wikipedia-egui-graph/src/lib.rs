@@ -2,7 +2,6 @@ pub mod builder;
 mod ui;
 
 use crate::builder::WikipediaGraphAppBuilder;
-use crossbeam::channel::{Receiver, Sender};
 use eframe::{App, CreationContext};
 use egui::{Context, Pos2, Ui, Vec2};
 use egui_graphs::{
@@ -53,9 +52,9 @@ pub struct WikipediaGraphApp {
     pub navigation_settings: SettingsNavigation,
     pub layout_settings: LayoutSettings,
     #[cfg(not(target_arch = "wasm32"))]
-    pub event_writer: Sender<Event>,
+    pub event_writer: crossbeam::channel::Sender<Event>,
     #[cfg(not(target_arch = "wasm32"))]
-    pub event_reader: Receiver<Event>,
+    pub event_reader: crossbeam::channel::Receiver<Event>,
     #[cfg(target_arch = "wasm32")]
     pub event_buffer: std::rc::Rc<std::cell::RefCell<Vec<Event>>>,
     pub client: WikipediaClient,

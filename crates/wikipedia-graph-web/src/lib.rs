@@ -1,7 +1,6 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use eframe::wasm_bindgen::{self, prelude::*};
-    use web_sys::HtmlCanvasElement;
     use wikipedia_egui_graph::WikipediaGraphApp;
 
     #[derive(Clone)]
@@ -74,6 +73,3 @@ mod wasm {
         }
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-use wasm::*;
