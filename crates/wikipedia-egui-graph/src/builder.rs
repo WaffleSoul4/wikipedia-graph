@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    ControlSettings, FrameCounter, InternetStatus, LayoutSettings, NodeEditor, SearchData,
-    StyleSettings, USER_AGENT, WikipediaGraphApp,
+    ControlSettings, FrameCounter, LayoutSettings, NodeEditor, SearchData, StyleSettings,
+    USER_AGENT, WikipediaGraphApp,
 };
 use egui_graphs::{Graph, SettingsInteraction, SettingsNavigation};
 use fastrand::Rng;
@@ -63,8 +63,6 @@ impl WikipediaGraphAppBuilder {
 
         let graph = StableDiGraph::default();
 
-        let internet_status = InternetStatus::unavailable();
-
         let graph = Graph::new(graph);
 
         let interaction_settings = SettingsInteraction::new()
@@ -102,11 +100,9 @@ impl WikipediaGraphAppBuilder {
             node_editor: NodeEditor::default(),
             style_settings: StyleSettings::default(),
             initialization: 5,
-            internet_status,
             language: self.language,
             search_data: SearchData::default(),
             node_stores: Arc::new(Mutex::new(Vec::new())),
-            test_store: Arc::new(Mutex::new(None)),
         }
     }
 }

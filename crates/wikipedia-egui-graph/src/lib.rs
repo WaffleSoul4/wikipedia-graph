@@ -18,18 +18,6 @@ use wikipedia_graph::{
     HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
 };
 
-type StoreType<T> = Arc<Mutex<Option<Result<T, HttpError>>>>;
-
-fn store_callback<T>(store: StoreType<T>) -> impl Fn(Result<T, HttpError>) {
-    move |response| match store.lock() {
-        Ok(mut t) => *t = Some(response),
-        Err(mut e) => {
-            warn!("Waiting on mutex...");
-            **e.get_mut() = Some(response)
-        }
-    }
-}
-
 fn store_callback_vec<T>(
     data: Arc<Mutex<Vec<(NodeIndex, Result<T, HttpError>, NodeAction)>>>,
     index: NodeIndex,
@@ -64,11 +52,9 @@ pub struct WikipediaGraphApp {
     pub node_editor: NodeEditor,
     pub style_settings: StyleSettings,
     pub initialization: u8,
-    pub internet_status: InternetStatus,
     pub language: WikiLanguage,
     pub search_data: SearchData,
     pub node_stores: Arc<Mutex<Vec<(NodeIndex, Result<WikipediaPage, HttpError>, NodeAction)>>>,
-    pub test_store: StoreType<()>,
 }
 
 pub struct FrameCounter {
@@ -157,129 +143,6 @@ pub struct StyleSettings {
 impl Default for StyleSettings {
     fn default() -> Self {
         StyleSettings { labels: true }
-    }
-}
-
-pub struct InternetStatus(InternetStatusInner);
-
-impl InternetStatus {
-    fn unavailable() -> Self {
-        InternetStatus(InternetStatusInner::Unavailable {
-            wait_time: Duration::from_secs(5),
-            last_retry: Instant::now(),
-            wait_max: Duration::from_mins(1),
-            error: HttpError::PageNotFound,
-            waiting: false,
-        })
-    }
-
-    fn get_base(&self, client: &WikipediaClient, store: StoreType<()>) {
-        client.get_api_base(store_callback(store));
-    }
-
-    fn update(
-        &mut self,
-        client: &WikipediaClient,
-        store: Arc<Mutex<Option<Result<(), HttpError>>>>,
-    ) -> &mut Self {
-        match self.0 {
-            InternetStatusInner::Available => {}
-            InternetStatusInner::Unavailable {
-                wait_time,
-                last_retry,
-                wait_max: _,
-                error: _,
-                waiting,
-            } => {
-                if Instant::now().duration_since(last_retry) > wait_time {
-                    self.test_internet(client, store);
-                } else if waiting {
-                    if let Ok(mut response) = store.try_lock() {
-                        if let Some(response) = response.take() {
-                            match response {
-                                Ok(()) => self.0 = InternetStatusInner::Available,
-                                Err(e) => self.0.reset_unavailable(e),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        self
-    }
-
-    #[allow(unused)] // Haven't set up proper network handling
-    fn set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
-        self.0 = InternetStatusInner::Unavailable {
-            wait_time,
-            last_retry: Instant::now(),
-            wait_max,
-            error: error,
-            waiting: false,
-        }
-    }
-
-    fn test_internet(&mut self, client: &WikipediaClient, store: StoreType<()>) {
-        self.get_base(client, store);
-
-        self.0.set_waiting();
-    }
-
-    #[allow(unused)]
-    fn try_set_unavailable(&mut self, wait_time: Duration, wait_max: Duration, error: HttpError) {
-        match self.0 {
-            InternetStatusInner::Available => {
-                self.0 = InternetStatusInner::Unavailable {
-                    wait_time,
-                    last_retry: Instant::now(),
-                    wait_max,
-                    error,
-                    waiting: false,
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-enum InternetStatusInner {
-    Available,
-    Unavailable {
-        wait_time: Duration,
-        last_retry: Instant,
-        wait_max: Duration,
-        error: HttpError,
-        waiting: bool,
-    },
-}
-
-impl InternetStatusInner {
-    fn set_waiting(&mut self) {
-        if let Self::Unavailable { waiting, .. } = self {
-            *waiting = true;
-        }
-    }
-
-    fn reset_unavailable(&mut self, new_error: HttpError) {
-        match self {
-            InternetStatusInner::Unavailable {
-                wait_time,
-                last_retry,
-                wait_max,
-                error,
-                waiting: _,
-            } => {
-                *error = new_error;
-                *last_retry = Instant::now();
-                if *wait_time < wait_max.div_f32(1.5) {
-                    *wait_time = wait_time.mul_f32(1.5)
-                } else {
-                    *wait_time = *wait_max
-                }
-            }
-            _ => {}
-        }
     }
 }
 
@@ -563,166 +426,130 @@ impl WikipediaGraphApp {
 
 impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
-        dbg!(self.graph.selected_nodes());
+        Self::update_nodes_from_store(&mut self.node_stores, &mut self.graph, &mut self.rng);
 
-        match &self
-            .internet_status
-            .update(&self.client, self.test_store.clone())
-            .0
-        {
-            InternetStatusInner::Available => {
-                Self::update_nodes_from_store(
-                    &mut self.node_stores,
-                    &mut self.graph,
-                    &mut self.rng,
-                );
+        self.search_bar(ctx);
 
-                self.search_bar(ctx);
+        self.frame_counter.update_fps();
 
-                self.frame_counter.update_fps();
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if self.control_settings.key_input {
+                self.keybinds(ui);
 
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    if self.control_settings.key_input {
-                        self.keybinds(ui);
+                self.update_position(ui);
+            }
 
-                        self.update_position(ui);
+            if self.initialization > 0 {
+                let mut meta = MetadataFrame::new(None).load(ui);
+
+                meta.zoom = 2.0;
+
+                meta.save(ui);
+
+                self.initialization -= 1;
+            }
+
+            let style = SettingsStyle::new().with_labels_always(self.style_settings.labels);
+
+            #[cfg(not(target_arch = "wasm32"))]
+            let event = self.event_reader.try_recv().ok();
+
+            #[cfg(target_arch = "wasm32")]
+            let event = self.event_buffer.borrow_mut().pop();
+
+            if let Some(event) = event {
+                match event {
+                    Event::NodeClick(event) => {
+                        self.set_selected_node(Some(NodeIndex::new(event.id)))
                     }
+                    Event::NodeDoubleClick(event) => {
+                        let parent_index = NodeIndex::new(event.id);
 
-                    if self.initialization > 0 {
-                        let mut meta = MetadataFrame::new(None).load(ui);
-
-                        meta.zoom = 2.0;
-
-                        meta.save(ui);
-
-                        self.initialization -= 1;
+                        self.load_node(parent_index, NodeAction::Expand);
                     }
+                    _ => {}
+                }
+            }
 
-                    let style = SettingsStyle::new().with_labels_always(self.style_settings.labels);
+            if self.control_settings.focus_selected {
+                self.focus_selected(ui);
+            }
 
-                    #[cfg(not(target_arch = "wasm32"))]
-                    let event = self.event_reader.try_recv().ok();
+            let mut state = egui_graphs::get_layout_state::<
+                FruchtermanReingoldWithCenterGravityState,
+            >(ui, None);
 
-                    #[cfg(target_arch = "wasm32")]
-                    let event = self.event_buffer.borrow_mut().pop();
+            let layout_settings = &self.layout_settings;
+            state.base.c_repulse = layout_settings.c_repulse;
+            state.base.k_scale = layout_settings.k_scale;
+            state.base.c_attract = layout_settings.c_attract;
+            state.base.damping = layout_settings.damping;
+            state.base.epsilon = layout_settings.epsilon;
+            state.base.dt = layout_settings.dt;
+            state.base.max_step = layout_settings.max_step;
+            state.base.is_running = layout_settings.is_running;
 
-                    if let Some(event) = event {
-                        match event {
-                            Event::NodeClick(event) => {
-                                self.set_selected_node(Some(NodeIndex::new(event.id)))
-                            }
-                            Event::NodeDoubleClick(event) => {
-                                let parent_index = NodeIndex::new(event.id);
+            let mut view = GraphView::<
+                WikipediaPage,
+                _,
+                _,
+                _,
+                _,
+                _,
+                FruchtermanReingoldWithCenterGravityState,
+                LayoutForceDirected<FruchtermanReingoldWithCenterGravity>,
+            >::new(&mut self.graph)
+            .with_interactions(&self.interaction_settings)
+            .with_navigations(&self.navigation_settings)
+            .with_styles(&style);
 
-                                self.load_node(parent_index, NodeAction::Expand);
-                            }
-                            _ => {}
-                        }
-                    }
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                view = view.with_event_sink(&self.event_writer);
+            }
 
-                    if self.control_settings.focus_selected {
-                        self.focus_selected(ui);
-                    }
+            #[cfg(target_arch = "wasm32")]
+            {
+                view = view.with_event_sink(&self.event_buffer);
+            }
 
-                    let mut state = egui_graphs::get_layout_state::<
-                        FruchtermanReingoldWithCenterGravityState,
-                    >(ui, None);
+            egui_graphs::set_layout_state(ui, state, None);
 
-                    let layout_settings = &self.layout_settings;
-                    state.base.c_repulse = layout_settings.c_repulse;
-                    state.base.k_scale = layout_settings.k_scale;
-                    state.base.c_attract = layout_settings.c_attract;
-                    state.base.damping = layout_settings.damping;
-                    state.base.epsilon = layout_settings.epsilon;
-                    state.base.dt = layout_settings.dt;
-                    state.base.max_step = layout_settings.max_step;
-                    state.base.is_running = layout_settings.is_running;
+            ui.add(&mut view);
+        });
 
-                    let mut view = GraphView::<
-                        WikipediaPage,
-                        _,
-                        _,
-                        _,
-                        _,
-                        _,
-                        FruchtermanReingoldWithCenterGravityState,
-                        LayoutForceDirected<FruchtermanReingoldWithCenterGravity>,
-                    >::new(&mut self.graph)
-                    .with_interactions(&self.interaction_settings)
-                    .with_navigations(&self.navigation_settings)
-                    .with_styles(&style);
-
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        view = view.with_event_sink(&self.event_writer);
-                    }
-
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        view = view.with_event_sink(&self.event_buffer);
-                    }
-
-                    egui_graphs::set_layout_state(ui, state, None);
-
-                    ui.add(&mut view);
-                });
-
-                egui::SidePanel::right("right")
-                    .default_width(300.0)
-                    .min_width(300.0)
-                    .show(ctx, |ui| {
-                        self.perf(ui);
-                        ui.separator();
-                        CollapsingHeader::new("Layout Settings")
-                            .default_open(true)
-                            .show(ui, |ui| self.layout_settings(ui));
-                        CollapsingHeader::new("Controls")
-                            .default_open(true)
-                            .show(ui, |ui| self.control_settings(ui));
-                        CollapsingHeader::new("Node Settings")
-                            .default_open(true)
-                            .show(ui, |ui| {
-                                self.node_editor(ui);
-                                self.random_controls(ui);
-                            });
-                        CollapsingHeader::new("Style")
-                            .default_open(true)
-                            .show(ui, |ui| self.style_settings(ui));
+        egui::SidePanel::right("right")
+            .default_width(300.0)
+            .min_width(300.0)
+            .show(ctx, |ui| {
+                self.perf(ui);
+                ui.separator();
+                CollapsingHeader::new("Layout Settings")
+                    .default_open(true)
+                    .show(ui, |ui| self.layout_settings(ui));
+                CollapsingHeader::new("Controls")
+                    .default_open(true)
+                    .show(ui, |ui| self.control_settings(ui));
+                CollapsingHeader::new("Node Settings")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        self.node_editor(ui);
+                        self.random_controls(ui);
                     });
+                CollapsingHeader::new("Style")
+                    .default_open(true)
+                    .show(ui, |ui| self.style_settings(ui));
+            });
 
-                if let Some(node_index) = self.selected_node() {
-                    let selected = node_index.clone();
+        if let Some(node_index) = self.selected_node() {
+            let selected = node_index.clone();
 
-                    egui::SidePanel::left("left")
-                        .default_width(200.0)
-                        .min_width(200.0)
-                        .show(ctx, |ui| {
-                            self.node_details_ui(ui, selected);
-                        });
-                }
-            }
-            InternetStatusInner::Unavailable {
-                wait_time: retry_time,
-                last_retry,
-                error,
-                ..
-            } => {
-                if egui::CentralPanel::default()
-                    .show(ctx, |ui| {
-                        Self::internet_unavailable_ui(
-                            ui,
-                            (retry_time.clone()
-                                - Instant::now().duration_since(last_retry.clone()))
-                            .as_secs_f32(),
-                            error.to_string(),
-                        )
-                    })
-                    .inner
-                {
-                    self.internet_status
-                        .test_internet(&self.client, self.test_store.clone());
-                }
-            }
+            egui::SidePanel::left("left")
+                .default_width(200.0)
+                .min_width(200.0)
+                .show(ctx, |ui| {
+                    self.node_details_ui(ui, selected);
+                });
         }
     }
 }
