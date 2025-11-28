@@ -1,6 +1,12 @@
-use std::{fs::File, path::Path};
+use std::{
+    fs::{DirBuilder, File},
+    path::PathBuf,
+};
 
 use wikimedia_language_codegen::{languages_as_enum_code, languages_from_sitematrix, site_matrix};
+
+const PACKAGE_NAME: &str = std::env!("CARGO_PKG_NAME");
+const OUT_DIR: &str = "output";
 
 fn main() {
     let site_matrix = site_matrix();
@@ -14,10 +20,27 @@ fn main() {
         code.to_string()
     );
 
-    let mut file = File::create(Path::new(
-        "crates/wikimedia-language-codegen/output/wikimedia_languages.rs",
-    ))
-    .expect("Failed to create output file");
+    let mut path = PathBuf::new();
+
+    path.push("crates");
+    path.push(PACKAGE_NAME);
+    path.push(OUT_DIR);
+
+    let dir_path = path.clone();
+
+    if !dir_path.exists() {
+        DirBuilder::new().create(dir_path.as_path()).expect(
+            format!(
+                "Failed to create output directory at {}",
+                dir_path.display()
+            )
+            .as_str(),
+        )
+    }
+
+    path.push("wikimedia_languages.rs");
+
+    let mut file = File::create(path.as_path()).expect("Failed to create output file");
 
     std::io::Write::write_all(&mut file, code_string.as_bytes())
         .expect("Failed to write code to file");
