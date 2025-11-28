@@ -64,7 +64,7 @@ impl WikipediaBody {
         "Wayback Machine", // Almost all sources are linked to through the wayback machine
     ];
 
-    const PAGE_TEXT_REGEX: &lazy_regex::Lazy<Regex> =
+    const WIKITEXT_LINK_REGEX: &lazy_regex::Lazy<Regex> =
         lazy_regex::regex!(r#"\[\[([a-zA-Z0-9 \(\)]+)(?:[|][a-zA-Z0-9 \(\)]+)?\]\]"#);
 
     /// Serialize the JSON from a wikitext response and wrap it
@@ -77,13 +77,32 @@ impl WikipediaBody {
         serde_json::from_str(text).map(|val| WikipediaBody::Links(val))
     }
 
-    /// Print the body as a string
+    /// Get the body of the page
     ///
     /// Output is either JSON or HTML
     pub fn to_string(self) -> String {
         match self {
             Self::WikiText(t) => t.to_string(),
             Self::Links(t) => t.to_string(),
+        }
+    }
+
+    /// Checks if the body is a redirect, if so returns a new page with the correct pathinfo
+    pub fn redirects_to(&self) -> Option<WikipediaPage> {
+        match self {
+            Self::Links(_) => None, // The API call doesn't actually tell you
+            Self::WikiText(t) => {
+                match t
+                    .get("parse")
+                    .and_then(|parse| parse.get("wikitext"))
+                    .and_then(|wikitext| wikitext.as_object()?.iter().next()?.1.as_str())
+                {
+                    Some(t) if t.contains("#REDIRECT") => {
+                        self.get_linked_pages().and_then(|mut pages| pages.next())
+                    }
+                    _ => None,
+                }
+            }
         }
     }
 
@@ -157,7 +176,7 @@ impl WikipediaBody {
 
     /// Get the linked pages of the body
     ///
-    /// Returns [None] if the recieved JSON is invalid
+    /// Returns [None] if the recieved JSON is malformed
     pub fn get_linked_pages(&self) -> Option<Box<dyn Iterator<Item = WikipediaPage> + '_>> {
         match self {
             WikipediaBody::WikiText(t) => Some(Box::new(Self::get_linked_pages_from_wikitext(t)?)),
@@ -199,7 +218,7 @@ impl WikipediaBody {
             .and_then(|wikitext| wikitext.as_object()?.iter().next()?.1.as_str())?;
 
         Some(
-            Self::PAGE_TEXT_REGEX
+            Self::WIKITEXT_LINK_REGEX
                 .captures_iter(&page_text)
                 .map(|capture| capture.extract::<1>())
                 .unique_by(|capture_data| capture_data.1[0])
@@ -418,7 +437,7 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for a random page fails
-            pub fn random(client: &WikipediaClient, callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + 'static) -> Result<(), LanguageInvalidError>  {
+            pub fn random(client: &WikipediaClient, callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + Clone + 'static) -> Result<(), LanguageInvalidError>  {
                 client.random_page(callback)
             }
 
@@ -429,7 +448,7 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for the page data fails
-            pub fn load_page_text(&self, client: &WikipediaClient, callback: impl Fn(Result<Self, HttpError>) + Send + 'static) -> Result<(), LanguageInvalidError> {
+            pub fn load_page_text(&self, client: &WikipediaClient, callback: impl Fn(Result<Self, HttpError>) + Send + Clone + 'static) -> Result<(), LanguageInvalidError> {
                 let title = self.title();
 
                 client

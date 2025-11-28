@@ -22,7 +22,7 @@ fn store_callback_vec<T>(
     data: Arc<Mutex<Vec<(NodeIndex, Result<T, HttpError>, NodeAction)>>>,
     index: NodeIndex,
     action: NodeAction,
-) -> impl Fn(Result<T, HttpError>) {
+) -> impl Fn(Result<T, HttpError>) + Clone {
     move |response| match data.lock() {
         Ok(mut data) => {
             data.push((index, response, action));

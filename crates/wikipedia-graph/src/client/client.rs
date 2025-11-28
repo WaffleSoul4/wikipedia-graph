@@ -4,6 +4,7 @@ use crate::page::{LanguageInvalidError, WikipediaBody, WikipediaUrlType};
 use crate::{WikiLanguage, WikipediaPage};
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
+use log::warn;
 use serde_json::Value;
 use std::fmt::Display;
 #[allow(unused_imports)] // For wasm stuff
@@ -37,9 +38,6 @@ pub enum HttpError {
     /// The amount of redirects exceeded [crate::client::CLIENT_REDIRECTS]
     #[error("Too many redirects")]
     TooManyRedirects,
-    /// Tell the user to redirect
-    #[error("Please redirect to {0}")]
-    Redirect(String), // Sorry, I'm no longer in control of the redirects anymore
     /// The request returned an unknown response code
     #[error("Unknown response code: '{0}'")]
     Unknown(u16),
@@ -49,6 +47,7 @@ pub enum HttpError {
 }
 
 /// A client used for getting Wikipedia pages
+#[derive(Clone, Debug)]
 pub struct WikipediaClient {
     language: WikiLanguage,
     headers: http::HeaderMap,
@@ -108,13 +107,15 @@ impl WikipediaClient {
     }
 
     fn parse_status_code(code: StatusCode, response: Response) -> Result<Response, HttpError> {
-        if code.is_redirection() {
-            if let Some(redirect_url) = response.headers.get(http::header::LOCATION.as_str()) {
-                log::info!("Redirecting to {redirect_url}");
+        // The api doesn't actually give redirect codes, hence this is pretty useless...
+        //
+        // if code.is_redirection() {
+        //     if let Some(redirect_url) = response.headers.get(http::header::LOCATION.as_str()) {
+        //         log::info!("Redirecting to {redirect_url}");
 
-                return Err(HttpError::Redirect(redirect_url.to_string()));
-            }
-        }
+        //         return Err(HttpError::Redirect(redirect_url.to_string()));
+        //     }
+        // }
 
         if code.as_u16() == 404 {
             return Err(HttpError::PageNotFound);
@@ -179,20 +180,32 @@ impl WikipediaClient {
     /// # Errors
     ///
     /// This method fails if the http request failed
-    pub fn get<T: Display>(
-        &self,
+    pub fn get<'a, T: Display>(
+        &'a self,
         pathinfo: T,
-        callback: impl Fn(Result<WikipediaBody, HttpError>) + Send + 'static,
+        callback: impl Fn(Result<WikipediaBody, HttpError>) + Send + 'static + Clone,
     ) -> Result<(), LanguageInvalidError> {
         let request = self.request_from_pathinfo(pathinfo, self.url_type)?;
 
         let url_type = self.url_type.clone();
 
-        self.get_request(request, move |respone| {
-            callback(respone.and_then(|body| {
+        let client_clone: WikipediaClient = self.clone();
+
+        self.get_request(request, move |response| {
+            let response = response.and_then(|body| {
                 WikipediaBody::from_url_type(url_type, body)
                     .map_err(|err| HttpError::DeserialisationError(err.to_string()))
-            }))
+            });
+
+            if let Ok(page) = &response
+                && let Some(redirect_page) = page.redirects_to()
+            {
+                if let Err(e) = client_clone.get(redirect_page.pathinfo(), callback.clone()) {
+                    warn!("Redirect failed: {e}");
+                }
+            } else {
+                callback(response)
+            }
         });
 
         Ok(())
