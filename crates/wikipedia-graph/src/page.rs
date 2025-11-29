@@ -62,16 +62,10 @@ impl WikipediaBody {
         "Wayback Machine", // Almost all sources are linked to through the wayback machine
     ];
 
-    /// A list of file endings to remove file wikilinks from the parsing results
-    const FILE_ENDINGS: [&str; 3] = [".png", ".svg", ".jpg"];
-
-    /// A regex that gets all of the wikilinks from a page
-    const WIKITEXT_LINK_REGEX: &lazy_regex::Lazy<Regex> = lazy_regex::regex!(
-        r#"\[\[(?:[^[\[\]\|\#:]]+: ?)?([^(?:[\[\]\|\#:]]+)(?:[\|\#][[^[\[\]]]+]+)?\]\]"#
-    );
+    const WIKITEXT_LINK_REGEX: &lazy_regex::Lazy<Regex> =
+        lazy_regex::regex!(r#"\[\[([^[\[\]\|]]+)(?:\|[[^[\[\]|]]+]+)?\]\]"#);
 
     // This regex first detects if the text is between two brackets
-    // Then it checks for a : and ignores everything before that
     // Then it matches for all characters except brackets and |
     // Then it checks for a |, and if it finds one, ignores the content behind it until the closing brackets
 
@@ -230,11 +224,6 @@ impl WikipediaBody {
                 .captures_iter(&page_text)
                 .map(|capture| capture.extract::<1>())
                 .unique_by(|capture_data| capture_data.1[0])
-                .filter(|capture_data| {
-                    Self::FILE_ENDINGS
-                        .iter()
-                        .all(|page| !capture_data.0.contains(page))
-                })
                 .filter(|capture_data| {
                     Self::FILTERED_PAGES
                         .iter()
@@ -493,11 +482,38 @@ impl WikipediaPage {
 
     /// Give a best guess at the title of the page
     pub fn title(&self) -> String {
-        url_encor::decode(self.pathinfo.replace("_", " ").as_str())
+        capitalize(url_encor::decode(self.pathinfo.replace("_", " ").as_str()))
     }
 
     /// Get all the pages that this page links to if the page text is loaded
     pub fn try_get_linked_pages(&self) -> Option<Box<dyn Iterator<Item = WikipediaPage> + '_>> {
         self.body.as_ref().map(|body| body.get_linked_pages())?
     }
+}
+
+fn capitalize(input: String) -> String {
+    let mut capitialize: bool = true;
+
+    input
+        .trim()
+        .replace("_", " ")
+        .chars()
+        .map(|char| match (char.is_whitespace(), capitialize) {
+            (true, true) => '*',
+            (false, true) => {
+                capitialize = false;
+                if let Some(uppercase) = char.to_uppercase().next() {
+                    uppercase
+                } else {
+                    char
+                }
+            }
+            (true, false) => {
+                capitialize = true;
+                char
+            }
+            _ => char,
+        })
+        .collect::<String>()
+        .replace("*", "")
 }
