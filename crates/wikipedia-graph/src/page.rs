@@ -18,14 +18,12 @@ pub struct WikipediaPage {
 
 /// An error that may occur when a language has no iso 639-1 representation
 #[derive(Error, Debug, Clone)]
-#[error("Language has no valid iso 639-1 representation")]
-pub struct LanguageInvalidError;
+#[error("Language has no valid representation on wikipedia")]
+pub struct WikipediaLanguageInvalidError;
 
 /// An error that may occur when the pathinfo of a page cannot be seperated from its body
 #[derive(Debug, Error)]
-#[error(
-    "Failed to parse pathinfo from body, pathinfo can only be parsed from WikipediaBody::Links"
-)]
+#[error("Failed to parse pathinfo from body")]
 pub struct PathinfoParseError;
 
 /// An error that may occur when parsing directly from a wikipedia URL
@@ -141,7 +139,7 @@ impl WikipediaBody {
     /// This method fails if the 'title' field is not available in the deserialised JSON
     pub fn get_pathinfo(&self) -> Result<String, PathinfoParseError> {
         match self {
-            WikipediaBody::WikiText(_) => Err(PathinfoParseError),
+            WikipediaBody::WikiText(wikitext) => Self::get_pathinfo_from_wikitext(&wikitext),
             WikipediaBody::Links(links) => Self::get_pathinfo_from_links(&links),
         }
     }
@@ -244,12 +242,14 @@ pub enum WikipediaUrlType {
 }
 
 impl WikipediaUrlType {
-    pub fn base_url(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
+    pub fn base_url(&self, language: WikiLanguage) -> Result<Url, WikipediaLanguageInvalidError> {
         Ok(match self {
             Self::Basic => Url::parse(
                 format!(
                     "https://{}.wikipedia.org/wiki/",
-                    language.as_code_wiki().ok_or(LanguageInvalidError)?
+                    language
+                        .as_code_wiki()
+                        .ok_or(WikipediaLanguageInvalidError)?
                 )
                 .as_str(),
             )
@@ -263,7 +263,9 @@ impl WikipediaUrlType {
             Self::LinksApi | Self::RawApi => Url::parse(
                 format!(
                     "https://{}.wikipedia.org/w/api.php",
-                    language.as_code_wiki().ok_or(LanguageInvalidError)?
+                    language
+                        .as_code_wiki()
+                        .ok_or(WikipediaLanguageInvalidError)?
                 )
                 .as_str(),
             )
@@ -281,7 +283,7 @@ impl WikipediaUrlType {
         &self,
         language: WikiLanguage,
         pathinfo: &String,
-    ) -> Result<Url, LanguageInvalidError> {
+    ) -> Result<Url, WikipediaLanguageInvalidError> {
         match self {
             WikipediaUrlType::Basic => Ok(self.base_url(language)?.join(&pathinfo).expect(
                 format!(
@@ -369,7 +371,10 @@ impl WikipediaPage {
     }
 
     /// Get the url of the wikipedia page with a certain language
-    pub fn url_with_lang(&self, language: WikiLanguage) -> Result<Url, LanguageInvalidError> {
+    pub fn url_with_lang(
+        &self,
+        language: WikiLanguage,
+    ) -> Result<Url, WikipediaLanguageInvalidError> {
         WikipediaUrlType::Basic.url_with(language, &self.pathinfo)
     }
 
@@ -441,7 +446,7 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for a random page fails
-            pub fn random(client: &WikipediaClient, callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + Clone + 'static) -> Result<(), LanguageInvalidError>  {
+            pub fn random(client: &WikipediaClient, callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + Clone + 'static) -> Result<(), WikipediaLanguageInvalidError>  {
                 client.random_page(callback)
             }
 
@@ -452,7 +457,7 @@ impl WikipediaPage {
             /// # Errors
             ///
             /// This method fails if the request for the page data fails
-            pub fn load_page_text(&self, client: &WikipediaClient, callback: impl Fn(Result<Self, HttpError>) + Send + Clone + 'static) -> Result<(), LanguageInvalidError> {
+            pub fn load_page_text(&self, client: &WikipediaClient, callback: impl Fn(Result<Self, HttpError>) + Send + Clone + 'static) -> Result<(), WikipediaLanguageInvalidError> {
                 let title = self.title();
 
                 client

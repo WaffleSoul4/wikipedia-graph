@@ -2,7 +2,7 @@ mod client;
 pub use client::*;
 
 use crate::{
-    page::{LanguageInvalidError, WikipediaUrlType},
+    page::{WikipediaLanguageInvalidError, WikipediaUrlType},
     wikimedia_languages::WikiLanguage,
 };
 use http::{HeaderMap, HeaderName, HeaderValue};
@@ -125,7 +125,7 @@ trait WikipediaClientCommon {
         &self,
         pathinfo: T,
         url_type: WikipediaUrlType,
-    ) -> Result<Url, LanguageInvalidError> {
+    ) -> Result<Url, WikipediaLanguageInvalidError> {
         let pathinfo = pathinfo.to_string();
 
         url_type.url_with(self.language(), &pathinfo)

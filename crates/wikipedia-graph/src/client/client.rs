@@ -1,6 +1,6 @@
 use super::WikipediaClientConfig;
 use crate::client::WikipediaClientCommon;
-use crate::page::{LanguageInvalidError, WikipediaBody, WikipediaUrlType};
+use crate::page::{WikipediaBody, WikipediaLanguageInvalidError, WikipediaUrlType};
 use crate::{WikiLanguage, WikipediaPage};
 use ehttp::{Headers, Request, Response};
 use http::StatusCode;
@@ -25,7 +25,7 @@ pub enum HttpError {
     UrlParseError(#[from] url::ParseError),
     /// A Url with the provided language couldn't be made
     #[error("Language Invalid: {0}")]
-    LanguageInvalidError(#[from] LanguageInvalidError),
+    LanguageInvalidError(#[from] WikipediaLanguageInvalidError),
     /// The requested page could not be found
     #[error("Page not found at URL")]
     PageNotFound,
@@ -64,7 +64,7 @@ impl WikipediaClient {
         &self,
         pathinfo: T,
         url_type: WikipediaUrlType,
-    ) -> Result<Request, LanguageInvalidError> {
+    ) -> Result<Request, WikipediaLanguageInvalidError> {
         let url: Url = self.url_from_pathinfo(pathinfo, url_type)?;
 
         let mut request = Request::get(url);
@@ -184,7 +184,7 @@ impl WikipediaClient {
         &'a self,
         pathinfo: T,
         callback: impl Fn(Result<WikipediaBody, HttpError>) + Send + 'static + Clone,
-    ) -> Result<(), LanguageInvalidError> {
+    ) -> Result<(), WikipediaLanguageInvalidError> {
         let request = self.request_from_pathinfo(pathinfo, self.url_type)?;
 
         let url_type = self.url_type.clone();
@@ -221,7 +221,7 @@ impl WikipediaClient {
     pub fn random_page(
         &self,
         callback: impl Fn(Result<WikipediaPage, HttpError>) + Send + 'static,
-    ) -> Result<(), LanguageInvalidError> {
+    ) -> Result<(), WikipediaLanguageInvalidError> {
         let mut base_url = WikipediaUrlType::LinksApi.base_url(self.language)?;
 
         base_url.set_query(Some(
