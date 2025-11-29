@@ -14,9 +14,9 @@ use log::warn;
 use petgraph::graph::NodeIndex;
 use std::sync::{Arc, Mutex};
 use web_time::{Duration, Instant};
-use wikipedia_graph::{
-    HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
-};
+use wikipedia_graph::{HttpError, Url, WikipediaGraph, WikipediaPage};
+
+pub use wikipedia_graph::{WikiLanguage, WikipediaClient};
 
 fn store_callback_vec<T>(
     data: Arc<Mutex<Vec<(NodeIndex, Result<T, HttpError>, NodeAction)>>>,

@@ -1,7 +1,10 @@
 #[cfg(target_arch = "wasm32")]
 mod wasm {
     use eframe::wasm_bindgen::{self, prelude::*};
-    use wikipedia_egui_graph::WikipediaGraphApp;
+    use log::warn;
+    use wikipedia_egui_graph::{
+        WikiLanguage, WikipediaGraphApp, builder::WikipediaGraphAppBuilder,
+    };
 
     #[derive(Clone)]
     #[wasm_bindgen] // Recursive, this is fixed in later versions
@@ -28,6 +31,22 @@ mod wasm {
         ) -> Result<(), wasm_bindgen::JsValue> {
             log::info!("Starting wasm...");
 
+            let mut builder = WikipediaGraphAppBuilder::default();
+
+            if let Some(query) = web_sys::window().and_then(|window| decode_request(window))
+                && let Some(language_index) = query.match_indices("lang=").next()
+            {
+                let language_code = &query[language_index.0 + 5..];
+
+                match WikiLanguage::from_code(language_code) {
+                    Some(language) => {
+                        builder = builder.with_language(language);
+                        log::info!("Language set to '{}'", language.as_name());
+                    }
+                    None => warn!("Failed to parse language code: {language_code}"),
+                }
+            }
+
             let app = self.runner.start(
                 // web_sys::window()
                 //     .expect("Failed to get window")
@@ -39,7 +58,25 @@ mod wasm {
                 //     .expect("Failed to get canvas as a canvas"),
                 canvas,
                 eframe::WebOptions::default(),
-                Box::new(|cc| Ok(Box::new(WikipediaGraphApp::new(cc)))),
+                Box::new(move |cc| {
+                    let mut app_builder = WikipediaGraphAppBuilder::default();
+
+                    if let Some(query) = web_sys::window().and_then(|window| decode_request(window))
+                        && let Some(language_index) = query.match_indices("lang=").next()
+                    {
+                        let language_code = &query[language_index.0 + 5..];
+
+                        match WikiLanguage::from_code(language_code) {
+                            Some(language) => {
+                                app_builder = app_builder.with_language(language);
+                                log::info!("Language set to '{}'", language.as_name());
+                            }
+                            None => warn!("Failed to parse language code: {language_code}"),
+                        }
+                    }
+
+                    Ok(Box::new(app_builder.build()))
+                }),
             );
 
             log::info!("Started runner... ");
@@ -70,6 +107,13 @@ mod wasm {
             self.runner
                 .panic_summary()
                 .map(|s: eframe::web::PanicSummary| s.callstack())
+        }
+    }
+
+    fn decode_request(window: web_sys::Window) -> Option<String> {
+        match window.location().search() {
+            Ok(s) => Some(s.trim_start_matches('?').to_owned()),
+            _ => None,
         }
     }
 }
