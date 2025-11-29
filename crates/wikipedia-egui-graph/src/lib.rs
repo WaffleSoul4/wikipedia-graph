@@ -14,9 +14,9 @@ use log::warn;
 use petgraph::graph::NodeIndex;
 use std::sync::{Arc, Mutex};
 use web_time::{Duration, Instant};
-use wikipedia_graph::{
-    HttpError, Url, WikiLanguage, WikipediaClient, WikipediaGraph, WikipediaPage,
-};
+use wikipedia_graph::{HttpError, Url, WikipediaGraph, WikipediaPage};
+
+pub use wikipedia_graph::{WikiLanguage, WikipediaClient};
 
 fn store_callback_vec<T>(
     data: Arc<Mutex<Vec<(NodeIndex, Result<T, HttpError>, NodeAction)>>>,
@@ -429,8 +429,6 @@ impl App for WikipediaGraphApp {
     fn update(&mut self, ctx: &Context, _: &mut eframe::Frame) {
         Self::update_nodes_from_store(&mut self.node_stores, &mut self.graph, &mut self.rng);
 
-        self.search_bar(ctx);
-
         self.frame_counter.update_fps();
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -542,15 +540,26 @@ impl App for WikipediaGraphApp {
                     .show(ui, |ui| self.style_settings(ui));
             });
 
-        if let Some(node_index) = self.selected_node() {
+        let side_panel = if let Some(node_index) = self.selected_node() {
             let selected = node_index.clone();
 
-            egui::SidePanel::left("left")
-                .default_width(200.0)
-                .min_width(200.0)
-                .show(ctx, |ui| {
-                    self.node_details_ui(ui, selected);
-                });
-        }
+            Some(
+                egui::SidePanel::left("left")
+                    .default_width(200.0)
+                    .min_width(200.0)
+                    .show(ctx, |ui| {
+                        self.node_details_ui(ui, selected);
+                    }),
+            )
+        } else {
+            None
+        };
+
+        self.search_bar(
+            ctx,
+            side_panel
+                .map(|panel| panel.response.rect.max.x)
+                .unwrap_or(0.),
+        );
     }
 }

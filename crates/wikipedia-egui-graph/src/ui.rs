@@ -1,5 +1,8 @@
 use crate::WikipediaGraphApp;
-use egui::{CollapsingHeader, Color32, Context, DragValue, Frame, RichText, Slider, TextEdit, Ui};
+use egui::{
+    CollapsingHeader, Color32, Context, DragValue, Frame, Pos2, RichText, Slider, TextEdit, Ui,
+    ViewportCommand,
+};
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::MetadataFrame;
 use log::{error, warn};
@@ -14,43 +17,57 @@ fn info_icon(ui: &mut egui::Ui, tip: &str) {
 }
 
 impl WikipediaGraphApp {
-    pub fn search_bar(&mut self, ctx: &Context) {
-        egui::Window::new("Node Search").show(ctx, |ui| {
-            ui.add(
-                TextEdit::singleline(&mut self.search_data.query).hint_text("Search added nodes"),
-            );
+    pub fn search_bar(&mut self, ctx: &Context, min_x: f32) {
+        let bottom_left = ctx.viewport_rect().left_bottom();
 
-            if !self.search_data.query.is_empty() {
-                let indices = self.graph.node_indicies();
+        egui::Window::new("Node Search")
+            .default_width(100.0)
+            .default_pos(Pos2::new(bottom_left.x + 10.0, 0.))
+            .constrain_to(ctx.content_rect().with_min_x(min_x))
+            .show(ctx, |ui| {
+                ui.add(
+                    TextEdit::singleline(&mut self.search_data.query)
+                        .hint_text("Search added nodes"),
+                );
 
-                let pages = self.search_data.get_searched_pages(indices);
+                if !self.search_data.query.is_empty() {
+                    let indices = self.graph.node_indicies();
 
-                for (name, index) in pages {
-                    ui.scope(|ui| {
-                        let visuals = ui.visuals();
+                    let pages = self.search_data.get_searched_pages(indices);
 
-                        let fill = if !ui.rect_contains_pointer(ui.max_rect()) {
-                            Color32::TRANSPARENT
-                        } else {
-                            visuals.code_bg_color
-                        };
+                    if let Some((_, index)) = pages.first()
+                        && ui.input(|input_state| input_state.key_pressed(Key::Enter))
+                    {
+                        self.set_selected_node(Some(index.clone()));
+                    }
 
-                        Frame::NONE
-                            .corner_radius(3.)
-                            .inner_margin(2.)
-                            .outer_margin(2.)
-                            .fill(fill)
-                            .show(ui, |ui| {
-                                let label = ui.label(name);
+                    for (name, index) in pages {
+                        ui.scope(|ui| {
+                            let visuals = ui.visuals();
 
-                                if label.clicked() {
-                                    self.set_selected_node(Some(index))
-                                }
-                            });
-                    });
-                }
-            };
-        });
+                            let fill = if !ui.rect_contains_pointer(
+                                ui.max_rect().with_max_y(ui.max_rect().min.y + 22.0),
+                            ) {
+                                Color32::TRANSPARENT
+                            } else {
+                                visuals.code_bg_color
+                            };
+
+                            Frame::NONE
+                                .corner_radius(3.)
+                                .inner_margin(2.)
+                                .fill(fill)
+                                .show(ui, |ui| {
+                                    let label = ui.label(name);
+
+                                    if label.clicked() {
+                                        self.set_selected_node(Some(index))
+                                    }
+                                });
+                        });
+                    }
+                };
+            });
     }
 
     pub fn keybinds(&mut self, ui: &mut Ui) {
