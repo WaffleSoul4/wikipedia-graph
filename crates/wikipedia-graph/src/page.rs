@@ -65,7 +65,11 @@ impl WikipediaBody {
     ];
 
     const WIKITEXT_LINK_REGEX: &lazy_regex::Lazy<Regex> =
-        lazy_regex::regex!(r#"\[\[([a-zA-Z0-9 \(\)]+)(?:[|][a-zA-Z0-9 \(\)]+)?\]\]"#);
+        lazy_regex::regex!(r#"\[\[([^[\[\]\|]]+)(?:\|[[^[\[\]|]]+]+)?\]\]"#);
+
+    // This regex first detects if the text is between two brackets
+    // Then it matches for all characters except brackets and |
+    // Then it checks for a |, and if it finds one, ignores the content behind it until the closing brackets
 
     /// Serialize the JSON from a wikitext response and wrap it
     pub fn wikitext_from_text(text: &str) -> Result<WikipediaBody, serde_json::Error> {

@@ -320,11 +320,12 @@ impl WikipediaGraphApp {
     }
 
     fn focused_node_from_meta(&self, ui: &Ui, meta: &mut MetadataFrame, index: NodeIndex) {
-        self.focus_point_from_meta(
-            ui,
-            meta,
-            self.graph.node(index).unwrap().location().to_vec2(),
-        );
+        match self.graph.node(index) {
+            Some(node) => {
+                self.focus_point_from_meta(ui, meta, node.location().to_vec2());
+            }
+            None => warn!("Failed to focus node: node doesn't exist"),
+        }
     }
 
     fn focus_point_from_meta(&self, ui: &Ui, meta: &mut MetadataFrame, point: Vec2) {
