@@ -24,13 +24,13 @@ Follow the instructions here to install the rust toolchain: https://rust-lang.or
 
 After that, try cloning the repository with `git clone https://github.com/WaffleSoul4/wikipedia-graph.git`.
 
-Next, run `cd wikipedia-graph` followed by `cargo run --bin wikipedia-graph-native` to run the app.
+Next, run `cd wikipedia-graph` followed by `cargo run --release --bin wikipedia-graph-native` to run the app.
 
 ### Web
 
 You can also host a web server which hosts a [webassembly](https://en.wikipedia.org/wiki/WebAssembly) version of the project.
 
-After cloning the repository, run `cd wikipedia-graph/crates/wikipedia-graph-web`. To build and run the server, run `./build_web.sh` & `./run_web.sh`.
+After cloning the repository, run `cd wikipedia-graph/crates/wikipedia-graph-web`. To build and run the server, run `./build_web.sh --release` & `./run_web.sh`.
 
 ## Here look at this code example!
 
