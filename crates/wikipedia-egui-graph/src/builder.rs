@@ -35,7 +35,6 @@ impl WikipediaGraphAppBuilder {
         Self {
             language,
             client_config: self.client_config.language(language),
-            ..self
         }
     }
 
@@ -83,7 +82,7 @@ impl WikipediaGraphAppBuilder {
         log::info!("App built!");
 
         WikipediaGraphApp {
-            graph: graph,
+            graph,
             interaction_settings,
             navigation_settings,
             layout_settings: LayoutSettings::default(),

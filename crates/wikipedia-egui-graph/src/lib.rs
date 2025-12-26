@@ -124,16 +124,9 @@ impl Default for ControlSettings {
     }
 }
 
+#[derive(Default)]
 pub struct NodeEditor {
     page_title: String,
-}
-
-impl Default for NodeEditor {
-    fn default() -> Self {
-        NodeEditor {
-            page_title: String::new(),
-        }
-    }
 }
 
 pub struct StyleSettings {
@@ -158,9 +151,9 @@ impl SearchData {
         Instant::now().duration_since(self.last_update)
     }
 
-    fn search_pages<'a>(
+    fn search_pages(
         &self,
-        pages: Vec<(&'a WikipediaPage, NodeIndex<u32>)>,
+        pages: Vec<(&WikipediaPage, NodeIndex<u32>)>,
     ) -> Vec<(String, NodeIndex<u32>)> {
         let fuse = fuse_rust::Fuse::default();
 
@@ -246,7 +239,6 @@ impl WikipediaGraphApp {
 
                 store
                     .drain(0..len)
-                    .into_iter()
                     .filter_map(|(index, response, action)| match response {
                         Ok(t) => Some((index, t, action)),
                         Err(e) => {
@@ -313,7 +305,7 @@ impl WikipediaGraphApp {
         if let Some(selected_node) = self.selected_node() {
             let mut meta = MetadataFrame::new(None).load(ui);
 
-            self.focused_node_from_meta(ui, &mut meta, selected_node.clone());
+            self.focused_node_from_meta(ui, &mut meta, *selected_node);
 
             meta.save(ui);
         }
@@ -335,13 +327,13 @@ impl WikipediaGraphApp {
     }
 
     fn selected_node(&self) -> Option<&NodeIndex> {
-        self.graph.selected_nodes().get(0)
+        self.graph.selected_nodes().first()
     }
 
     fn set_selected_node(&mut self, index: Option<NodeIndex>) {
         // Deselect the previously selected node
         if let Some(index) = self.selected_node() {
-            match self.graph.node_mut(index.clone()) {
+            match self.graph.node_mut(*index) {
                 Some(node) => node.set_selected(false),
                 None => warn!("Previously selected node does not exist"),
             }
@@ -360,7 +352,7 @@ impl WikipediaGraphApp {
             .rng
             .choice(self.graph.node_indicies().iter().map(|(_, index)| index))
         {
-            Some(index) => self.set_selected_node(Some(index.clone())),
+            Some(index) => self.set_selected_node(Some(*index)),
             None => warn!("Failed to select a random node"),
         }
     }
@@ -368,14 +360,14 @@ impl WikipediaGraphApp {
     fn expand_random(&mut self) {
         self.select_random();
         match self.selected_node() {
-            Some(index) => self.expand_node(index.clone()),
+            Some(index) => self.expand_node(*index),
             None => warn!("Failed to expand random node: no node was preselected"),
         }
     }
 
     fn remove_selected(&mut self) {
         if let Some(selected) = self.selected_node() {
-            self.remove_node(selected.clone());
+            self.remove_node(*selected);
             self.set_selected_node(None);
         }
     }
@@ -414,13 +406,13 @@ impl WikipediaGraphApp {
     }
 
     pub fn load_node(&mut self, index: NodeIndex, action: NodeAction) {
-        if let Some(node) = self.graph.node(index) {
-            if let Err(e) = node.payload().load_page_text(
+        if let Some(node) = self.graph.node(index)
+            && let Err(e) = node.payload().load_page_text(
                 &self.client,
                 store_callback_vec(self.node_stores.clone(), index, action),
-            ) {
-                warn!("{e}") // Self explanatory error
-            }
+            )
+        {
+            warn!("{e}") // Self explanatory error
         }
     }
 }
@@ -541,7 +533,7 @@ impl App for WikipediaGraphApp {
             });
 
         let side_panel = if let Some(node_index) = self.selected_node() {
-            let selected = node_index.clone();
+            let selected = *node_index;
 
             Some(
                 egui::SidePanel::left("left")

@@ -1,7 +1,6 @@
 use crate::WikipediaGraphApp;
 use egui::{
     CollapsingHeader, Color32, Context, DragValue, Frame, Pos2, RichText, Slider, TextEdit, Ui,
-    ViewportCommand,
 };
 use egui::{Key, Rect, Spinner, Vec2};
 use egui_graphs::MetadataFrame;
@@ -38,7 +37,7 @@ impl WikipediaGraphApp {
                     if let Some((_, index)) = pages.first()
                         && ui.input(|input_state| input_state.key_pressed(Key::Enter))
                     {
-                        self.set_selected_node(Some(index.clone()));
+                        self.set_selected_node(Some(*index));
                     }
 
                     for (name, index) in pages {
@@ -273,7 +272,7 @@ impl WikipediaGraphApp {
     pub fn node_position_ui(&mut self, ui: &mut Ui, index: NodeIndex) {
         match self.graph.node_mut(index) {
             Some(node) => {
-                let mut pos = node.location().clone();
+                let mut pos = node.location();
 
                 ui.collapsing("Position", |ui| {
                     ui.horizontal(|ui| {
@@ -399,7 +398,7 @@ impl WikipediaGraphApp {
                     .collapsing(label, |ui| ui.button("Select node").clicked())
                     .body_returned?
                 {
-                    Some(connected_index.clone())
+                    Some(connected_index)
                 } else {
                     None
                 }
